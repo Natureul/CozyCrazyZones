@@ -58,13 +58,16 @@ public final class PlayerRegionTracker {
 
         CompoundTag persistent = player.getPersistentData();
         String lastAnnounced = persistent.getString(LAST_ANNOUNCED_KEY);
+        boolean firstEverAnnouncement = lastAnnounced.isBlank();
         boolean neverAnnouncedHere = !resolved.id().equals(lastAnnounced);
         int cooldown = CozyZonesConfig.ANNOUNCEMENT_COOLDOWN.get();
         boolean cooldownReady = state.lastAnnouncementTick == Integer.MIN_VALUE || player.tickCount - state.lastAnnouncementTick >= cooldown;
 
         // Full-screen announcements remain radial-only. Cardinal identity lives in the persistent
         // badge/debug API so walking a warped ecological border never causes title spam.
-        if ((changed || neverAnnouncedHere) && cooldownReady) announce(player, resolved, state);
+        if ((changed || neverAnnouncedHere) && cooldownReady) {
+            announce(player, resolved, state, firstEverAnnouncement);
+        }
     }
 
     private static boolean sameDisplayCell(RegionalCell a, RegionalCell b) {
@@ -108,8 +111,14 @@ public final class PlayerRegionTracker {
         return region;
     }
 
-    private static void announce(ServerPlayer player, Region region, State state) {
-        player.connection.send(new ClientboundSetTitlesAnimationPacket(10, 55, 18));
+    private static void announce(ServerPlayer player, Region region, State state, boolean firstEverAnnouncement) {
+        // Give the opening Hearthlands reveal time to actually register while the player is taking
+        // in the starter house. Ordinary boundary crossings stay brisk and non-intrusive.
+        if (firstEverAnnouncement && region == Region.HEARTHLANDS) {
+            player.connection.send(new ClientboundSetTitlesAnimationPacket(15, 110, 25));
+        } else {
+            player.connection.send(new ClientboundSetTitlesAnimationPacket(10, 55, 18));
+        }
         player.connection.send(new ClientboundSetSubtitleTextPacket(region.subtitleComponent()));
         player.connection.send(new ClientboundSetTitleTextPacket(region.titleComponent()));
         float pitch = switch (region) {
