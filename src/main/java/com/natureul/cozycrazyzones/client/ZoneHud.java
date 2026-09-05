@@ -51,9 +51,9 @@ public final class ZoneHud {
             return "◆ " + region.displayName().toUpperCase();
         }
         if (influence == RegionalInfluenceBand.CARDINAL_TRANSITION) {
-            return "◆ " + region.displayName().toUpperCase() + " • " + macro.displayName().toUpperCase() + " TRANSITION";
+            return "◆ " + macro.displayName().toUpperCase() + " TRANSITION - " + region.displayName().toUpperCase();
         }
-        return "◆ " + macro.adjective().toUpperCase() + " " + region.displayName().toUpperCase();
+        return "◆ " + macro.adjective().toUpperCase() + " - " + region.displayName().toUpperCase();
     }
 
     private static boolean shouldRender(Minecraft minecraft) {
