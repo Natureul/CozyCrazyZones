@@ -8,6 +8,9 @@ public final class CozyZonesConfig {
     public static final ForgeConfigSpec COMMON_SPEC;
     public static final ForgeConfigSpec CLIENT_SPEC;
 
+    public static final ForgeConfigSpec.IntValue INNER_CORE_RADIUS;
+    public static final ForgeConfigSpec.IntValue CARDINAL_ESTABLISHED_RADIUS;
+    public static final ForgeConfigSpec.DoubleValue MACRO_BORDER_BLEND_DEGREES;
     public static final ForgeConfigSpec.IntValue FRONTIER_RADIUS;
     public static final ForgeConfigSpec.IntValue WILDLANDS_RADIUS;
     public static final ForgeConfigSpec.IntValue DREAD_RADIUS;
@@ -18,6 +21,17 @@ public final class CozyZonesConfig {
     static {
         ForgeConfigSpec.Builder common = new ForgeConfigSpec.Builder();
         common.push("regions");
+        INNER_CORE_RADIUS = common.comment(
+                "Inside this radius cardinal ecology is intentionally neutral/shared countryside.",
+                "Default 700: starter house -> ordinary temperate countryside."
+        ).defineInRange("innerCoreRadius", 700, 0, 10000);
+        CARDINAL_ESTABLISHED_RADIUS = common.comment(
+                "By this radius the cardinal macro-region should be clearly established.",
+                "Between innerCoreRadius and this value is the organic cardinal transition band."
+        ).defineInRange("cardinalEstablishedRadius", 1200, 1, 20000);
+        MACRO_BORDER_BLEND_DEGREES = common.comment(
+                "Angular half-width used by future biome/ecology rules to soften warped borders between cardinal macro-regions."
+        ).defineInRange("macroBorderBlendDegrees", 11.0D, 1.0D, 30.0D);
         FRONTIER_RADIUS = common.comment("Hearthlands ends at this horizontal distance from actual Overworld spawn.").defineInRange("frontierRadius", 2500, 256, 100000);
         WILDLANDS_RADIUS = common.defineInRange("wildlandsRadius", 5500, 512, 200000);
         DREAD_RADIUS = common.defineInRange("dreadRadius", 9000, 1024, 500000);
@@ -31,6 +45,17 @@ public final class CozyZonesConfig {
         HUD_MODE = client.comment("ATLAS_OWNED shows the persistent badge only while carrying a Map Atlases atlas. Entry titles always remain enabled.").defineEnum("mode", HudMode.ATLAS_OWNED);
         client.pop();
         CLIENT_SPEC = client.build();
+    }
+
+    public static int effectiveInnerCoreRadius() {
+        int frontier = FRONTIER_RADIUS.get();
+        return Math.max(0, Math.min(INNER_CORE_RADIUS.get(), Math.max(0, frontier - 2)));
+    }
+
+    public static int effectiveCardinalEstablishedRadius() {
+        int core = effectiveInnerCoreRadius();
+        int frontier = FRONTIER_RADIUS.get();
+        return Math.max(core + 1, Math.min(CARDINAL_ESTABLISHED_RADIUS.get(), Math.max(core + 1, frontier - 1)));
     }
 
     private CozyZonesConfig() {}

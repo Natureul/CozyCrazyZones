@@ -5,17 +5,21 @@ import net.minecraft.commands.Commands;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.MobSpawnEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.loading.FMLPaths;
 import net.minecraftforge.registries.ForgeRegistries;
 
@@ -63,11 +67,17 @@ public final class ZoneServerEvents {
         var access = event.getServer().registryAccess();
         var structures = access.registryOrThrow(Registries.STRUCTURE);
         for (ResourceLocation id : ZoneRuleRegistry.structures().keySet()) {
+            if (!namespaceLoaded(id)) continue;
             if (!structures.containsKey(id)) CozyCrazyZones.LOGGER.warn("Configured structure ID is absent from this runtime: {}", id);
         }
         for (ResourceLocation id : ZoneRuleRegistry.naturalEntities().keySet()) {
+            if (!namespaceLoaded(id)) continue;
             if (!BuiltInRegistries.ENTITY_TYPE.containsKey(id)) CozyCrazyZones.LOGGER.warn("Configured entity ID is absent from this runtime: {}", id);
         }
+    }
+
+    private static boolean namespaceLoaded(ResourceLocation id) {
+        return "minecraft".equals(id.getNamespace()) || ModList.get().isLoaded(id.getNamespace());
     }
 
     @SubscribeEvent
@@ -79,13 +89,23 @@ public final class ZoneServerEvents {
                         return 0;
                     }
                     if (player.level().dimension() != Level.OVERWORLD) {
-                        ctx.getSource().sendSuccess(() -> Component.literal("CozyCrazyZones is radial only in the Overworld."), false);
+                        ctx.getSource().sendSuccess(() -> Component.literal("CozyCrazyZones geography is Overworld-only."), false);
                         return Command.SINGLE_SUCCESS;
                     }
                     ServerLevel level = player.serverLevel();
-                    double distance = CozyZonesApi.distanceFromSpawn(level, player.getX(), player.getZ());
-                    Region region = CozyZonesApi.regionAt(level, player.getX(), player.getZ());
-                    ctx.getSource().sendSuccess(() -> Component.literal(String.format("%s — %.1f blocks from world spawn", region.displayName(), distance)).withStyle(region.formatting()), false);
+                    RegionalCell cell = CozyZonesApi.regionalCellAt(level, player.getX(), player.getZ());
+                    String ecology = switch (cell.influenceBand()) {
+                        case SHARED_CORE -> "Shared Core";
+                        case CARDINAL_TRANSITION -> cell.macroRegion().displayName() + " transition";
+                        case ESTABLISHED -> cell.macroRegion().displayName();
+                    };
+                    int strength = (int) Math.round(cell.regionalStrength() * 100.0D);
+                    int border = (int) Math.round(cell.macroBoundaryStrength() * 100.0D);
+                    String message = String.format(
+                            "Radial: %s | Ecology: %s | %.1f blocks from world spawn | cardinal strength %d%% | regional-core strength %d%%",
+                            cell.radialZone().displayName(), ecology, cell.distanceFromSpawn(), strength, border
+                    );
+                    ctx.getSource().sendSuccess(() -> Component.literal(message).withStyle(cell.radialZone().formatting()), false);
                     return Command.SINGLE_SUCCESS;
                 }))
                 .then(Commands.literal("dump_registry").requires(src -> src.hasPermission(2)).executes(ctx -> dumpRegistry(ctx.getSource()))));
@@ -103,6 +123,32 @@ public final class ZoneServerEvents {
             lines.add("");
             lines.add("# Entity types");
             BuiltInRegistries.ENTITY_TYPE.keySet().stream().map(ResourceLocation::toString).sorted(Comparator.naturalOrder()).forEach(lines::add);
+
+            var biomeRegistry = source.registryAccess().registryOrThrow(Registries.BIOME);
+            List<ResourceLocation> biomeIds = biomeRegistry.keySet().stream().sorted(Comparator.comparing(ResourceLocation::toString)).toList();
+            lines.add("");
+            lines.add("# Biomes");
+            biomeIds.stream().map(ResourceLocation::toString).forEach(lines::add);
+
+            lines.add("");
+            lines.add("# Biome details: tags and final natural spawn pools after biome modifiers");
+            for (ResourceLocation biomeId : biomeIds) {
+                ResourceKey<Biome> key = ResourceKey.create(Registries.BIOME, biomeId);
+                var holderOptional = biomeRegistry.getHolder(key);
+                if (holderOptional.isEmpty()) continue;
+                var holder = holderOptional.get();
+                List<String> tags = holder.tags().map(tag -> "#" + tag.location()).sorted().toList();
+                lines.add("BIOME " + biomeId + (tags.isEmpty() ? "" : " tags=" + String.join(",", tags)));
+
+                for (MobCategory category : MobCategory.values()) {
+                    for (var spawn : holder.value().getMobSettings().getMobs(category).unwrap()) {
+                        ResourceLocation entityId = ForgeRegistries.ENTITY_TYPES.getKey(spawn.type);
+                        if (entityId == null) continue;
+                        lines.add("  SPAWN " + category.getName() + " " + entityId + " min=" + spawn.minCount + " max=" + spawn.maxCount);
+                    }
+                }
+            }
+
             Path path = FMLPaths.GAMEDIR.get().resolve("logs").resolve("cozycrazyzones-registry-dump.txt");
             Files.createDirectories(path.getParent());
             Files.write(path, lines, StandardCharsets.UTF_8);
