@@ -1,6 +1,7 @@
 package com.natureul.cozycrazyzones.mixin;
 
 import com.natureul.cozycrazyzones.CozyZonesApi;
+import com.natureul.cozycrazyzones.ZoneRuleRegistry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.Registries;
@@ -35,11 +36,17 @@ public abstract class ChunkGeneratorMixin {
                                         CallbackInfoReturnable<Boolean> cir) {
         if (!(((StructureManagerAccessor) structureManager).cozyzones$getLevelAccessor() instanceof net.minecraft.world.level.ServerLevelAccessor accessor)) return;
         ServerLevel level = accessor.getLevel();
-        if (level.dimension() != Level.OVERWORLD) return;
 
         Structure structure = entry.structure().value();
         ResourceLocation id = registryAccess.registryOrThrow(Registries.STRUCTURE).getKey(structure);
         if (id == null) return;
+
+        // Global suppression rules (currently Cataclysm's non-pyramid structures) must work in
+        // Nether/End too. Radial/cardinal geography itself remains Overworld-only.
+        if (level.dimension() != Level.OVERWORLD) {
+            if (ZoneRuleRegistry.structureExplicitlySuppressed(id)) cir.setReturnValue(false);
+            return;
+        }
 
         double x = chunkPos.getMinBlockX() + 8.0D;
         double z = chunkPos.getMinBlockZ() + 8.0D;

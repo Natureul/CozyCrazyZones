@@ -38,9 +38,17 @@ public final class ZoneServerEvents {
     public static void onFinalizeSpawn(MobSpawnEvent.FinalizeSpawn event) {
         if (event.getSpawnType() != MobSpawnType.NATURAL) return;
         ServerLevel level = event.getLevel().getLevel();
-        if (level.dimension() != Level.OVERWORLD) return;
         ResourceLocation id = ForgeRegistries.ENTITY_TYPES.getKey(event.getEntity().getType());
         if (id == null) return;
+
+        // Namespace-wide suppressions are global. This is how unrelated Cataclysm natural mobs
+        // stay out of the Overworld, Nether and End without touching authored structure/summon spawns.
+        if (ZoneRuleRegistry.naturalEntityNamespaceSuppressed(id)) {
+            event.setSpawnCancelled(true);
+            return;
+        }
+
+        if (level.dimension() != Level.OVERWORLD) return;
         if (!CozyZonesApi.naturalEntityAllowed(level, id, event.getX(), event.getZ())) event.setSpawnCancelled(true);
     }
 
