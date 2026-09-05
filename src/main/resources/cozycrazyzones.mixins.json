@@ -6,7 +6,9 @@
   "refmap": "cozycrazyzones.refmap.json",
   "mixins": [
     "ChunkGeneratorMixin",
-    "StructureManagerAccessor"
+    "StructureManagerAccessor",
+    "MultiNoiseBiomeSourceMixin",
+    "NoiseBasedChunkGeneratorMixin"
   ],
   "injectors": {
     "defaultRequire": 1
