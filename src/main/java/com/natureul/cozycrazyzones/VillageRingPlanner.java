@@ -16,6 +16,7 @@ import net.minecraft.world.level.levelgen.structure.StructureSet;
 import net.minecraft.world.level.levelgen.structure.placement.RandomSpreadStructurePlacement;
 
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -23,15 +24,16 @@ import java.util.concurrent.ConcurrentMap;
 /**
  * Picks one deterministic, locator-compatible vanilla village candidate around the starter area.
  *
- * We deliberately choose from the real minecraft:villages RandomSpreadStructurePlacement rather
- * than inventing an arbitrary chunk. That keeps /locate and future cartographer logic aware of the
- * guaranteed village.
+ * The result - including a failed search - is cached. Caching the empty result matters because this
+ * method is queried from structure generation for many chunks; ConcurrentHashMap#computeIfAbsent
+ * does not retain a null mapping, which previously caused the same village search and warning to run
+ * over and over during start-region generation.
  */
 public final class VillageRingPlanner {
     public static final double MIN_VILLAGE_START_DISTANCE = 1000.0D;
     private static final double IDEAL_DISTANCE = 1150.0D;
     private static final ResourceLocation VILLAGE_SET = new ResourceLocation("minecraft", "villages");
-    private static final ConcurrentMap<Key, ChunkPos> TARGETS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Key, Optional<ChunkPos>> TARGETS = new ConcurrentHashMap<>();
 
     private VillageRingPlanner() {}
 
@@ -41,12 +43,12 @@ public final class VillageRingPlanner {
                                      RegistryAccess registryAccess) {
         BlockPos spawn = level.getSharedSpawnPos();
         Key key = new Key(structureState.getLevelSeed(), spawn.getX(), spawn.getZ());
-        return TARGETS.computeIfAbsent(key, ignored -> computeTarget(
+        return TARGETS.computeIfAbsent(key, ignored -> Optional.ofNullable(computeTarget(
                 spawn,
                 generator,
                 structureState,
                 registryAccess
-        ));
+        ))).orElse(null);
     }
 
     public static void clear() {
@@ -63,15 +65,18 @@ public final class VillageRingPlanner {
             return null;
         }
 
-        ChunkPos best = chooseCandidate(spawn, generator, structureState, placement, 1050.0D, 1250.0D);
+        ChunkPos best = chooseCandidate(spawn, generator, structureState, placement, 1050.0D, 1250.0D, 0.50D);
         if (best == null) {
-            // Some seeds can put the randomized placement cells awkwardly around the narrow ideal
-            // annulus. Stay outside the hard 1000-block sanctuary, but widen only as much as needed.
-            best = chooseCandidate(spawn, generator, structureState, placement, 1000.0D, 1450.0D);
+            best = chooseCandidate(spawn, generator, structureState, placement, 1000.0D, 1450.0D, 0.38D);
+        }
+        if (best == null) {
+            // Last-resort ring is still firmly outside the starter sanctuary, but is intentionally
+            // more permissive. A slightly farther first village is better than silently having none.
+            best = chooseCandidate(spawn, generator, structureState, placement, 1000.0D, 1650.0D, 0.20D);
         }
 
         if (best == null) {
-            CozyCrazyZones.LOGGER.warn("No suitable locator-compatible village candidate found between 1000 and 1450 blocks");
+            CozyCrazyZones.LOGGER.warn("No suitable locator-compatible village candidate found between 1000 and 1650 blocks; result cached for this world");
             return null;
         }
 
@@ -93,7 +98,8 @@ public final class VillageRingPlanner {
                                             ChunkGeneratorStructureState structureState,
                                             RandomSpreadStructurePlacement placement,
                                             double minDistance,
-                                            double maxDistance) {
+                                            double maxDistance,
+                                            double minimumBoundaryStrength) {
         int spawnChunkX = SectionPos.blockToSectionCoord(spawn.getX());
         int spawnChunkZ = SectionPos.blockToSectionCoord(spawn.getZ());
         int spacing = placement.spacing();
@@ -102,10 +108,10 @@ public final class VillageRingPlanner {
         ChunkPos best = null;
         double bestScore = Double.MAX_VALUE;
 
-        // +/-5 placement cells is far more than needed for a ~1.2k ring with vanilla village
-        // spacing, while still making this a tiny one-time computation.
-        for (int gx = -5; gx <= 5; gx++) {
-            for (int gz = -5; gz <= 5; gz++) {
+        // +/-6 placement cells remains a tiny one-time computation and comfortably covers the
+        // wider fallback annulus even with modded village spacing.
+        for (int gx = -6; gx <= 6; gx++) {
+            for (int gz = -6; gz <= 6; gz++) {
                 int probeChunkX = spawnChunkX + spacing * gx;
                 int probeChunkZ = spawnChunkZ + spacing * gz;
                 ChunkPos candidate = placement.getPotentialStructureChunk(
@@ -121,10 +127,9 @@ public final class VillageRingPlanner {
                 int blockX = candidate.getMiddleBlockX();
                 int blockZ = candidate.getMiddleBlockZ();
                 RegionalCell cell = WorldGeographyContext.cellAt(blockX, blockZ);
-                if (cell.macroBoundaryStrength() < 0.50D) continue;
+                if (cell.macroBoundaryStrength() < minimumBoundaryStrength) continue;
                 if (!looksLikeVillageLand(generator, structureState, blockX, blockZ)) continue;
 
-                // Prefer ~1150 blocks, then use a deterministic seed/chunk tie-breaker.
                 double jitter = (mix64(structureState.getLevelSeed() ^ candidate.toLong()) >>> 11) * 0x1.0p-53;
                 double score = Math.abs(distance - IDEAL_DISTANCE) + jitter * 8.0D;
                 if (score < bestScore) {
