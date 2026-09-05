@@ -8,10 +8,8 @@ import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkAccess;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,6 +23,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * MultiNoiseBiomeSource#getNoiseBiome. TerraBlender gets to produce the native large-scale biome
  * shapes first; once that asynchronous pass is complete, we rewrite the finished chunk palette.
  * That makes CozyCrazyZones the final geographic policy without depending on mixin ordering.
+ *
+ * Important 1.20.1 detail: ChunkStatus marks a ProtoChunk as BIOMES only after createBiomes' future
+ * returns to the status pipeline. Therefore ProtoChunk#getNoiseBiome is still guarded while our
+ * thenApply callback runs, even though its LevelChunkSection palettes have already been filled.
+ * Read those section palettes directly instead of calling the guarded ProtoChunk method.
  */
 public final class RegionalBiomePostProcessor {
     private static final ResourceLocation ASPEN_GLADE = id("biomesoplenty:aspen_glade");
@@ -53,21 +56,30 @@ public final class RegionalBiomePostProcessor {
         int surfaceQuartY = QuartPos.fromBlock(seaLevel);
 
         // Snapshot only the 4x4 surface palette needed by the physical ocean-conversion pass.
-        // LevelChunkSection fills into a recreated palette and swaps it only after each section is
-        // complete, so getNoiseBiome from inside the resolver still reads that section's native
-        // TerraBlender palette.
-        List<Holder<Biome>> nativeSurface = new ArrayList<>(16);
+        // Do NOT call ProtoChunk#getNoiseBiome here: createBiomes has filled the section palettes,
+        // but ChunkStatus has not yet advanced the ProtoChunk to BIOMES.
+        @SuppressWarnings("unchecked")
+        Holder<Biome>[] nativeSurface = (Holder<Biome>[]) new Holder<?>[16];
         for (int qz = 0; qz < 4; qz++) {
             for (int qx = 0; qx < 4; qx++) {
-                nativeSurface.add(chunk.getNoiseBiome(minQuartX + qx, surfaceQuartY, minQuartZ + qz));
+                nativeSurface[qz * 4 + qx] = rawNoiseBiome(
+                        chunk,
+                        minQuartX + qx,
+                        surfaceQuartY,
+                        minQuartZ + qz
+                );
             }
         }
 
+        // ChunkAccess#fillBiomesFromNoise is safe before the status flag flips. Its section-level
+        // implementation recreates a palette, resolves all 64 cells, and only then swaps it in.
+        // rawNoiseBiome therefore still sees the native palette for the section currently being
+        // resolved, without touching ProtoChunk's status guard.
         chunk.fillBiomesFromNoise((quartX, quartY, quartZ, ignoredSampler) -> {
-            Holder<Biome> original = chunk.getNoiseBiome(quartX, quartY, quartZ);
+            Holder<Biome> original = rawNoiseBiome(chunk, quartX, quartY, quartZ);
             if (QuartPos.toBlock(quartY) < 48) return original;
 
-            ResourceLocation originalId = original.unwrapKey().map(key -> key.location()).orElse(null);
+            ResourceLocation originalId = key(original);
             if (originalId == null) return original;
             if (!BiomeRegionality.isManagedSurfaceBiome(originalId)
                     && !ASPEN_GLADE.equals(originalId)
@@ -107,16 +119,26 @@ public final class RegionalBiomePostProcessor {
             return replacement;
         }, sampler);
 
+        // Derive the terrain mask from the native surface snapshot and the exact remap decision.
+        // Reading the ProtoChunk again here would hit the same status guard that caused v0.3.3 to
+        // crash. Also require the target holder to exist, because a missing target means the actual
+        // palette stayed native and the physical terrain must not be raised.
         boolean[] converted = new boolean[16];
         boolean anyConverted = false;
         for (int qz = 0; qz < 4; qz++) {
             for (int qx = 0; qx < 4; qx++) {
                 int index = qz * 4 + qx;
-                ResourceLocation before = key(nativeSurface.get(index));
-                ResourceLocation after = key(chunk.getNoiseBiome(minQuartX + qx, surfaceQuartY, minQuartZ + qz));
-                boolean wasOcean = before != null && BiomeRegionality.isOcean(before);
-                boolean isOcean = after != null && BiomeRegionality.isOcean(after);
-                if (wasOcean && !isOcean) {
+                ResourceLocation before = key(nativeSurface[index]);
+                if (before == null || !BiomeRegionality.isOcean(before)) continue;
+
+                int blockX = QuartPos.toBlock(minQuartX + qx);
+                int blockZ = QuartPos.toBlock(minQuartZ + qz);
+                RegionalCell cell = WorldGeographyContext.cellAt(blockX, blockZ);
+                ResourceLocation target = remap(before, cell, blockX, blockZ);
+
+                if (!target.equals(before)
+                        && lookup.containsKey(target)
+                        && !BiomeRegionality.isOcean(target)) {
                     converted[index] = true;
                     anyConverted = true;
                 }
@@ -132,6 +154,20 @@ public final class RegionalBiomePostProcessor {
                 );
             }
         }
+    }
+
+    /**
+     * Directly reads the section biome palette and intentionally bypasses ProtoChunk#getNoiseBiome.
+     * The latter rejects reads until ChunkStatus.BIOMES is committed, which happens just after the
+     * createBiomes future (and our postprocessor) returns.
+     */
+    private static Holder<Biome> rawNoiseBiome(ChunkAccess chunk, int quartX, int quartY, int quartZ) {
+        int minQuartY = QuartPos.fromBlock(chunk.getMinBuildHeight());
+        int maxQuartY = minQuartY + QuartPos.fromBlock(chunk.getHeight()) - 1;
+        int clampedQuartY = Math.max(minQuartY, Math.min(maxQuartY, quartY));
+        int blockY = QuartPos.toBlock(clampedQuartY);
+        int sectionIndex = chunk.getSectionIndex(blockY);
+        return chunk.getSection(sectionIndex).getNoiseBiome(quartX & 3, clampedQuartY & 3, quartZ & 3);
     }
 
     /**
