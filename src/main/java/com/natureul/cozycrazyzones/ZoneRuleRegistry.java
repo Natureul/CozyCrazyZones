@@ -64,7 +64,7 @@ public final class ZoneRuleRegistry {
         structure("dungeons_enhanced:dungeon_variant", Region.HEARTHLANDS);
         structure("dungeons_enhanced:watch_tower", Region.HEARTHLANDS);
         structure("dungeons_enhanced:witch_tower", Region.HEARTHLANDS);
-        regionalStructure("dungeons_enhanced:desert_tomb", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Small southern desert-site content", MacroRegion.SOUTH);
+        regionalStructure("dungeons_enhanced:desert_tomb", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Small Sunscar desert-site content", MacroRegion.SOUTH);
         structure("dungeons_enhanced:sunken_shrine", Region.HEARTHLANDS);
         structure("betterdungeons:spider_dungeon", Region.HEARTHLANDS);
         structure("valhelsia_structures:spawner_dungeon", Region.HEARTHLANDS);
@@ -76,13 +76,13 @@ public final class ZoneRuleRegistry {
         structure("dungeons_enhanced:tower_of_the_undead", Region.FRONTIER);
         structure("dungeons_enhanced:castle", Region.FRONTIER);
         structure("dungeons_enhanced:pirate_ship", Region.FRONTIER);
-        regionalStructure("dungeons_enhanced:desert_temple", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Strongly arid structure", MacroRegion.SOUTH);
-        regionalStructure("dungeons_enhanced:jungle_monument", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Strongly tropical structure", MacroRegion.EAST);
+        regionalStructure("dungeons_enhanced:desert_temple", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Strongly arid Sunscar structure", MacroRegion.SOUTH);
+        regionalStructure("dungeons_enhanced:jungle_monument", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Strongly tropical Greenveil structure", MacroRegion.EAST);
         structure("dungeons_enhanced:large_dungeon", Region.FRONTIER);
         structure("betterdungeons:skeleton_dungeon", Region.FRONTIER);
         structure("betterdungeons:zombie_dungeon", Region.FRONTIER);
-        regionalStructure("betterdeserttemples:desert_temple", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "YUNG desert temple", MacroRegion.SOUTH);
-        regionalStructure("betterjungletemples:jungle_temple", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "YUNG jungle temple", MacroRegion.EAST);
+        regionalStructure("betterdeserttemples:desert_temple", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "YUNG Sunscar desert temple", MacroRegion.SOUTH);
+        regionalStructure("betterjungletemples:jungle_temple", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "YUNG Greenveil jungle temple", MacroRegion.EAST);
         structure("valhelsia_structures:forge", Region.FRONTIER);
         structure("valhelsia_structures:castle", Region.FRONTIER);
         structure("valhelsia_structures:castle_ruin", Region.FRONTIER);
@@ -91,45 +91,62 @@ public final class ZoneRuleRegistry {
 
         // Wildlands: deliberate diamond-tier expeditions.
         structure("dungeons_enhanced:deep_crypt", Region.WILDLANDS);
-        regionalStructure("dungeons_enhanced:ice_pit", Region.WILDLANDS, RegionalInfluenceBand.ESTABLISHED, "Northern cold-region dungeon", MacroRegion.NORTH);
+        regionalStructure("dungeons_enhanced:ice_pit", Region.WILDLANDS, RegionalInfluenceBand.ESTABLISHED, "Frostmarch cold-region dungeon", MacroRegion.NORTH);
         structure("dungeons_enhanced:monster_maze", Region.WILDLANDS);
         structure("dungeons_enhanced:elders_temple", Region.WILDLANDS);
         structure("dungeons_enhanced:flying_dutchman", Region.WILDLANDS);
         structure("mowziesmobs:wrought_chamber", Region.WILDLANDS);
-        regionalStructure("mowziesmobs:frostmaw_spawn", Region.WILDLANDS, RegionalInfluenceBand.ESTABLISHED, "Required northern Wildlands boss", MacroRegion.NORTH);
-        regionalStructure("mowziesmobs:umvuthana_grove", Region.WILDLANDS, RegionalInfluenceBand.ESTABLISHED, "Required southern Wildlands boss", MacroRegion.SOUTH);
+        regionalStructure("mowziesmobs:frostmaw_spawn", Region.WILDLANDS, RegionalInfluenceBand.ESTABLISHED, "Required Frostmarch Wildlands boss", MacroRegion.NORTH);
+        regionalStructure("mowziesmobs:umvuthana_grove", Region.WILDLANDS, RegionalInfluenceBand.ESTABLISHED, "Required Sunscar Wildlands boss", MacroRegion.SOUTH);
         structure("mowziesmobs:monastery", Region.WILDLANDS);
 
         // Known regional final destination. Cataclysm's other structures are namespace-suppressed above.
-        regionalStructure("cataclysm:cursed_pyramid", Region.DREAD_REACHES, RegionalInfluenceBand.ESTABLISHED, "Southern final: Ancient Remnant", MacroRegion.SOUTH);
+        regionalStructure("cataclysm:cursed_pyramid", Region.DREAD_REACHES, RegionalInfluenceBand.ESTABLISHED, "Sunscar final: Ancient Remnant", MacroRegion.SOUTH);
 
         // Born in Chaos tower families. Observation towers remain broad local content for now;
-        // Dark Towers are pushed to the western old-forest Dread ecology.
+        // Dark Towers are pushed to the Amberwood Dread ecology.
         STRUCTURE_PREFIXES = List.of(
                 new PrefixStructureRule("born_in_chaos_v1:observation_tower_", new StructureRule(Region.HEARTHLANDS, Set.of(), RegionalInfluenceBand.SHARED_CORE, "Observation tower family")),
-                new PrefixStructureRule("born_in_chaos_v1:dark_tower_", new StructureRule(Region.DREAD_REACHES, EnumSet.of(MacroRegion.WEST), RegionalInfluenceBand.ESTABLISHED, "Western Born in Chaos deep-forest tower family"))
+                new PrefixStructureRule("born_in_chaos_v1:dark_tower_", new StructureRule(Region.DREAD_REACHES, EnumSet.of(MacroRegion.WEST), RegionalInfluenceBand.ESTABLISHED, "Amberwood Born in Chaos deep-forest tower family"))
         );
 
-        // Existing radial rules, now carrying cardinal ecology where the audit is strong enough.
-        regionalNatural("mowziesmobs:foliaath", Region.FRONTIER, false, true, "Eastern biome predator", MacroRegion.EAST);
-        natural("mowziesmobs:naga", Region.FRONTIER, false, true, "Coastal/mesa predator; cardinal assignment still under review");
-        natural("skarrier_mobs:snap", Region.FRONTIER, true, true, "Daytime-capable biome predator; cardinal assignment still under review");
-        regionalNatural("skarrier_mobs:dangle", Region.FRONTIER, true, true, "Bamboo-jungle daytime danger", MacroRegion.EAST);
+        // Runtime biome dump showed that several mod-wide biome modifiers place mob entries into
+        // essentially every surface biome. These NATURAL-only rules provide the actual progression
+        // firewall; authored raids, hordes, structures, summons and commands intentionally bypass it.
+
+        // Frontier ecology: recognizable step above the Hearthlands baseline.
+        regionalNatural("mowziesmobs:foliaath", Region.FRONTIER, false, true, "Greenveil biome predator", MacroRegion.EAST);
+        natural("mowziesmobs:naga", Region.FRONTIER, false, true, "Coastal/stony-shore predator; remains multi-region");
+        regionalNatural("skarrier_mobs:snap", Region.FRONTIER, true, true, "Sunscar desert daytime predator", MacroRegion.SOUTH);
+        regionalNatural("skarrier_mobs:dangle", Region.FRONTIER, true, true, "Greenveil bamboo-jungle daytime danger", MacroRegion.EAST);
         regionalNatural("skarrier_mobs:slither_spawner_dummy", Region.FRONTIER, true, true, "Gate NATURAL dummy; it creates Slithers as MOB_SUMMONED", MacroRegion.EAST);
-        regionalNatural("skarrier_mobs:quake", Region.FRONTIER, true, true, "80 HP desert surface daytime threat", MacroRegion.SOUTH);
-        natural("born_in_chaos_v1:skeleton_thrasher", Region.FRONTIER, false, true, "Night escalation");
+        regionalNatural("skarrier_mobs:quake", Region.FRONTIER, true, true, "80 HP Sunscar desert surface daytime threat", MacroRegion.SOUTH);
+
+        natural("born_in_chaos_v1:skeleton_thrasher", Region.FRONTIER, false, true, "Heavy armored night escalation");
         natural("born_in_chaos_v1:zombie_bruiser", Region.FRONTIER, true, true, "Heavy roaming threat");
         natural("born_in_chaos_v1:bonescaller", Region.FRONTIER, false, true, "Caster escalation");
-        natural("born_in_chaos_v1:dire_hound_leader", Region.FRONTIER, true, true, "Roaming pack threat");
-        natural("myths_of_the_sea:bunyip", Region.FRONTIER, true, true, "Swamp predator; cardinal assignment still under review");
+        natural("born_in_chaos_v1:dire_hound_leader", Region.FRONTIER, true, true, "Roaming pack leader");
+        natural("born_in_chaos_v1:dread_hound", Region.FRONTIER, false, true, "Pack threat paired with Dire Hound Leader progression");
+        natural("born_in_chaos_v1:door_knight", Region.FRONTIER, false, true, "Armored blocking melee escalation");
+        natural("born_in_chaos_v1:skeleton_demoman", Region.FRONTIER, false, true, "Explosive skeleton escalation");
+        regionalNatural("born_in_chaos_v1:spirit_guide", Region.FRONTIER, true, true, "Dry/hot roaming caster for Sunscar", MacroRegion.SOUTH);
+
+        natural("myths_of_the_sea:bunyip", Region.FRONTIER, true, true, "Swamp predator; remains multi-region until water ecology pass");
         natural("myths_of_the_sea:bake_kujira", Region.FRONTIER, true, true, "Coastal danger");
 
-        regionalNatural("skarrier_mobs:carniflore", Region.WILDLANDS, true, true, "Major eastern jungle predator", MacroRegion.EAST);
-        regionalNatural("skarrier_mobs:slither_matriarch", Region.WILDLANDS, true, true, "Eastern mangrove escalation", MacroRegion.EAST);
+        // Wildlands ecology: miniboss-class and major roaming threats.
+        regionalNatural("skarrier_mobs:carniflore", Region.WILDLANDS, true, true, "Major Greenveil jungle predator", MacroRegion.EAST);
+        regionalNatural("skarrier_mobs:slither_matriarch", Region.WILDLANDS, true, true, "Greenveil mangrove escalation", MacroRegion.EAST);
+        natural("skarrier_mobs:wrought", Region.WILDLANDS, true, true, "Skarrier miniboss-class natural spawn");
+
         natural("born_in_chaos_v1:lifestealer", Region.WILDLANDS, false, true, "Miniboss-class natural spawn");
         natural("born_in_chaos_v1:missioner", Region.WILDLANDS, false, true, "NATURAL spawn only; authored appearances remain legal");
+        natural("born_in_chaos_v1:nightmare_stalker", Region.WILDLANDS, false, true, "Fast high-danger roaming predator");
+        natural("born_in_chaos_v1:mother_spider", Region.WILDLANDS, false, true, "Large spider/miniboss-class natural spawn");
+        regionalNatural("born_in_chaos_v1:sir_pumpkinhead", Region.WILDLANDS, false, true, "Amberwood seasonal Wildlands boss; non-NATURAL authored appearances bypass", MacroRegion.WEST);
         natural("born_in_chaos_v1:fallen_chaos_knight", Region.WILDLANDS, true, false, "Disabled until Scarlet Persecutor suppression interaction is tested");
 
+        // Dread Reaches apex roamers.
         natural("myths_of_the_sea:leviathan", Region.DREAD_REACHES, true, true, "Dread Reaches sea monster");
         natural("myths_of_the_sea:kraken", Region.DREAD_REACHES, true, true, "Dread Reaches sea monster");
         natural("born_in_chaos_v1:supreme_bonescaller", Region.DREAD_REACHES, false, true, "Natural roaming boss only; structure/event spawns bypass this rule");
