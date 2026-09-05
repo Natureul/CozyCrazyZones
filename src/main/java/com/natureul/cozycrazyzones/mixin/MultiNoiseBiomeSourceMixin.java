@@ -5,6 +5,7 @@ import com.natureul.cozycrazyzones.MacroRegion;
 import com.natureul.cozycrazyzones.Region;
 import com.natureul.cozycrazyzones.RegionalCell;
 import com.natureul.cozycrazyzones.RegionalInfluenceBand;
+import com.natureul.cozycrazyzones.RegionalNoise;
 import com.natureul.cozycrazyzones.WorldGeographyContext;
 import net.minecraft.core.Holder;
 import net.minecraft.core.QuartPos;
@@ -61,6 +62,7 @@ public abstract class MultiNoiseBiomeSourceMixin {
                         blockX,
                         blockZ
                 );
+        targetId = cozyzones$softenHearthlandsOceanEdge(originalId, targetId, cell, blockX, blockZ);
         targetId = cozyzones$reserveIceMazeForDread(originalId, targetId, cell);
         if (targetId.equals(originalId)) return;
 
@@ -90,6 +92,42 @@ public abstract class MultiNoiseBiomeSourceMixin {
     }
 
     /**
+     * Ocean suppression is strongest near home, but must not terminate on the exact 2,500-block
+     * Frontier circle. Between roughly 1,850 and 2,450 blocks, some original ocean sectors are
+     * restored with a broad noise mask. By the boundary, normal ocean geography has returned, so
+     * no artificial circular coastline can reveal the gameplay-zone radius.
+     */
+    @Unique
+    private ResourceLocation cozyzones$softenHearthlandsOceanEdge(ResourceLocation originalId,
+                                                                   ResourceLocation targetId,
+                                                                   RegionalCell cell,
+                                                                   int blockX,
+                                                                   int blockZ) {
+        if (cell.radialZone() != Region.HEARTHLANDS
+                || cell.distanceFromSpawn() < 1850.0D
+                || !BiomeRegionality.isOcean(originalId)
+                || BiomeRegionality.isOcean(targetId)) {
+            return targetId;
+        }
+
+        double t = cozyzones$smoothstep(1850.0D, 2450.0D, cell.distanceFromSpawn());
+        double field = (RegionalNoise.sample(
+                WorldGeographyContext.worldSeed() ^ 0x54D3A7B1C62F09E5L,
+                blockX,
+                blockZ,
+                720.0D
+        ) + 1.0D) * 0.5D;
+        if (field >= t) return targetId;
+
+        boolean deep = originalId.getPath().startsWith("deep_");
+        return switch (cell.macroRegion()) {
+            case NORTH -> new ResourceLocation("minecraft", deep ? "deep_cold_ocean" : "cold_ocean");
+            case EAST, SOUTH -> new ResourceLocation("minecraft", deep ? "deep_lukewarm_ocean" : "lukewarm_ocean");
+            case WEST -> new ResourceLocation("minecraft", deep ? "deep_ocean" : "ocean");
+        };
+    }
+
+    /**
      * In this exact pack Aquamirae marks only frozen_ocean and deep_frozen_ocean with its
      * #aquamirae:ice_maze biome tag. Keeping Frostmarch merely cold until Dread Reaches therefore
      * turns the Ice Maze/Cornelia destination into real outer-region geography rather than letting
@@ -111,6 +149,13 @@ public abstract class MultiNoiseBiomeSourceMixin {
             return new ResourceLocation("minecraft", deep ? "deep_cold_ocean" : "cold_ocean");
         }
         return targetId;
+    }
+
+    @Unique
+    private double cozyzones$smoothstep(double edge0, double edge1, double value) {
+        if (edge1 <= edge0) return value >= edge1 ? 1.0D : 0.0D;
+        double t = Math.max(0.0D, Math.min(1.0D, (value - edge0) / (edge1 - edge0)));
+        return t * t * (3.0D - 2.0D * t);
     }
 
     @Unique
