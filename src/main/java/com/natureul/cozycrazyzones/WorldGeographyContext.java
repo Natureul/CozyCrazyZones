@@ -6,15 +6,21 @@ import net.minecraft.core.BlockPos;
  * Worldgen-safe geography context for code paths that do not have a ServerLevel reference
  * (notably BiomeSource during chunk generation).
  *
- * Before the Overworld's shared spawn is available we use the canonical world origin. Once the
- * server is started, the anchor is snapped to the actual shared spawn so gameplay and future
- * chunks use the same center. Initial spawn chunks are inside the neutral shared core either way.
+ * New worlds begin with a provisional origin anchor because vanilla has not chosen the real shared
+ * spawn yet. While that spawn search is active, every queried/generated candidate is deliberately
+ * treated as neutral Shared Core terrain. Vanilla may search roughly two thousand blocks from the
+ * origin, so a fixed 700-block origin bubble is not sufficient. As soon as setInitialSpawn commits
+ * the real shared spawn, the provisional mode ends and all future geography is centered there.
+ *
+ * Existing worlds can load their saved shared spawn before chunk loading and therefore skip the
+ * provisional phase immediately.
  */
 public final class WorldGeographyContext {
     private static final double TWO_PI = Math.PI * 2.0D;
     private static final double QUARTER_PI = Math.PI / 4.0D;
 
     private static volatile boolean prepared;
+    private static volatile boolean provisionalAnchor;
     private static volatile long worldSeed;
     private static volatile double anchorX = 0.5D;
     private static volatile double anchorZ = 0.5D;
@@ -25,20 +31,27 @@ public final class WorldGeographyContext {
         worldSeed = seed;
         anchorX = 0.5D;
         anchorZ = 0.5D;
+        provisionalAnchor = true;
         prepared = true;
     }
 
     public static void setSharedSpawn(BlockPos spawn) {
         anchorX = spawn.getX() + 0.5D;
         anchorZ = spawn.getZ() + 0.5D;
+        provisionalAnchor = false;
     }
 
     public static void clear() {
         prepared = false;
+        provisionalAnchor = false;
     }
 
     public static boolean prepared() {
         return prepared;
+    }
+
+    public static boolean provisionalAnchor() {
+        return provisionalAnchor;
     }
 
     public static long worldSeed() {
@@ -49,6 +62,21 @@ public final class WorldGeographyContext {
         double dx = x - anchorX;
         double dz = z - anchorZ;
         double distance = Math.hypot(dx, dz);
+
+        // During vanilla's new-world spawn search, do not let a candidate 1,500-2,000 blocks from
+        // origin accidentally become Frontier/Frostmarch/etc. Any chunk generated to validate a
+        // spawn candidate is temporary Shared Core geography until vanilla commits the real anchor.
+        if (provisionalAnchor) {
+            return new RegionalCell(
+                    Region.HEARTHLANDS,
+                    CozyZonesApi.macroRegionForOffset(worldSeed, dx, dz),
+                    RegionalInfluenceBand.SHARED_CORE,
+                    distance,
+                    0.0D,
+                    1.0D
+            );
+        }
+
         return new RegionalCell(
                 CozyZonesApi.regionForDistance(distance),
                 CozyZonesApi.macroRegionForOffset(worldSeed, dx, dz),
