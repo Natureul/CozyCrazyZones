@@ -4,6 +4,7 @@ import com.natureul.cozycrazyzones.BiomeRegionality;
 import com.natureul.cozycrazyzones.MacroRegion;
 import com.natureul.cozycrazyzones.Region;
 import com.natureul.cozycrazyzones.RegionalCell;
+import com.natureul.cozycrazyzones.RegionalInfluenceBand;
 import com.natureul.cozycrazyzones.WorldGeographyContext;
 import net.minecraft.core.Holder;
 import net.minecraft.core.QuartPos;
@@ -23,6 +24,9 @@ import java.util.Map;
 @Mixin(MultiNoiseBiomeSource.class)
 public abstract class MultiNoiseBiomeSourceMixin {
     @Unique
+    private static final ResourceLocation COZYZONES$MOOR = new ResourceLocation("biomesoplenty", "moor");
+
+    @Unique
     private Map<ResourceLocation, Holder<Biome>> cozyzones$possibleBiomes;
 
     @Inject(method = "getNoiseBiome", at = @At("RETURN"), cancellable = true)
@@ -40,24 +44,49 @@ public abstract class MultiNoiseBiomeSourceMixin {
         if (original == null) return;
 
         ResourceLocation originalId = original.unwrapKey().map(key -> key.location()).orElse(null);
-        if (originalId == null || !BiomeRegionality.isManagedSurfaceBiome(originalId)) return;
+        if (originalId == null) return;
+        boolean isMoor = COZYZONES$MOOR.equals(originalId);
+        if (!isMoor && !BiomeRegionality.isManagedSurfaceBiome(originalId)) return;
 
         int blockX = QuartPos.toBlock(quartX);
         int blockZ = QuartPos.toBlock(quartZ);
         RegionalCell cell = WorldGeographyContext.cellAt(blockX, blockZ);
 
-        ResourceLocation targetId = BiomeRegionality.remap(
-                originalId,
-                cell,
-                WorldGeographyContext.worldSeed(),
-                blockX,
-                blockZ
-        );
+        ResourceLocation targetId = isMoor
+                ? cozyzones$remapMoor(cell)
+                : BiomeRegionality.remap(
+                        originalId,
+                        cell,
+                        WorldGeographyContext.worldSeed(),
+                        blockX,
+                        blockZ
+                );
         targetId = cozyzones$reserveIceMazeForDread(originalId, targetId, cell);
         if (targetId.equals(originalId)) return;
 
         Holder<Biome> replacement = cozyzones$lookup(targetId);
         if (replacement != null) cir.setReturnValue(replacement);
+    }
+
+    /**
+     * The runtime audit identifies BOP Moor as a wet, swamp-tagged mountain biome. Treat it as a
+     * mild Greenveil wetland; outside Greenveil it becomes a terrain-compatible regional analogue.
+     */
+    @Unique
+    private ResourceLocation cozyzones$remapMoor(RegionalCell cell) {
+        if (cell.influenceBand() == RegionalInfluenceBand.SHARED_CORE || cell.macroBoundaryStrength() < 0.42D) {
+            return new ResourceLocation("minecraft", "meadow");
+        }
+
+        return switch (cell.macroRegion()) {
+            case EAST -> COZYZONES$MOOR;
+            case NORTH -> new ResourceLocation("biomesoplenty",
+                    cell.radialZone().atLeast(Region.FRONTIER) ? "muskeg" : "bog");
+            case SOUTH -> new ResourceLocation("minecraft",
+                    cell.radialZone().atLeast(Region.FRONTIER) ? "savanna_plateau" : "savanna");
+            case WEST -> new ResourceLocation("biomesoplenty",
+                    cell.radialZone().atLeast(Region.WILDLANDS) ? "redwood_forest" : "seasonal_forest");
+        };
     }
 
     /**
