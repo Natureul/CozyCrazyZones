@@ -1,6 +1,7 @@
 package com.natureul.cozycrazyzones.mixin;
 
 import com.natureul.cozycrazyzones.BiomeRegionality;
+import com.natureul.cozycrazyzones.CozyCrazyZones;
 import com.natureul.cozycrazyzones.MacroRegion;
 import com.natureul.cozycrazyzones.Region;
 import com.natureul.cozycrazyzones.RegionalCell;
@@ -21,16 +22,36 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-@Mixin(MultiNoiseBiomeSource.class)
+/**
+ * Final surface-biome regionalization pass.
+ *
+ * TerraBlender injects a cancellable HEAD return into MultiNoiseBiomeSource#getNoiseBiome. This
+ * mixin deliberately uses a much lower priority so it is applied after TerraBlender/Citadel have
+ * transformed the method; our RETURN hook then sees their synthetic early-return path too. In
+ * other words: TerraBlender decides the native biome shape first, CozyCrazyZones regionalizes that
+ * finished answer second.
+ */
+@Mixin(value = MultiNoiseBiomeSource.class, priority = 100)
 public abstract class MultiNoiseBiomeSourceMixin {
     @Unique
     private static final ResourceLocation COZYZONES$MOOR = new ResourceLocation("biomesoplenty", "moor");
+    @Unique
+    private static final AtomicBoolean COZYZONES$FIRST_REMAP_LOGGED = new AtomicBoolean();
+    @Unique
+    private static final AtomicBoolean COZYZONES$FIRST_OCEAN_SUPPRESSION_LOGGED = new AtomicBoolean();
+    @Unique
+    private static final AtomicBoolean COZYZONES$MISSING_TARGET_LOGGED = new AtomicBoolean();
 
     @Unique
     private Map<ResourceLocation, Holder<Biome>> cozyzones$possibleBiomes;
 
-    @Inject(method = "getNoiseBiome", at = @At("RETURN"), cancellable = true)
+    @Inject(
+            method = "getNoiseBiome(IIILnet/minecraft/world/level/biome/Climate$Sampler;)Lnet/minecraft/core/Holder;",
+            at = @At("RETURN"),
+            cancellable = true
+    )
     private void cozyzones$regionalizeSurfaceBiomes(int quartX,
                                                     int quartY,
                                                     int quartZ,
@@ -67,7 +88,38 @@ public abstract class MultiNoiseBiomeSourceMixin {
         if (targetId.equals(originalId)) return;
 
         Holder<Biome> replacement = cozyzones$lookup(targetId);
-        if (replacement != null) cir.setReturnValue(replacement);
+        if (replacement == null) {
+            if (COZYZONES$MISSING_TARGET_LOGGED.compareAndSet(false, true)) {
+                CozyCrazyZones.LOGGER.warn(
+                        "Regional biome remapper wanted {} -> {} at {},{} but the target is absent from this MultiNoiseBiomeSource possible-biome set",
+                        originalId, targetId, blockX, blockZ
+                );
+            }
+            return;
+        }
+
+        cir.setReturnValue(replacement);
+
+        if (COZYZONES$FIRST_REMAP_LOGGED.compareAndSet(false, true)) {
+            CozyCrazyZones.LOGGER.info(
+                    "Regional biome remapper ACTIVE after native biome selection: {} -> {} at {},{} ({} / {} / {:.0f} blocks)",
+                    originalId,
+                    targetId,
+                    blockX,
+                    blockZ,
+                    cell.radialZone().displayName(),
+                    cell.influenceBand(),
+                    cell.distanceFromSpawn()
+            );
+        }
+        if (BiomeRegionality.isOcean(originalId)
+                && !BiomeRegionality.isOcean(targetId)
+                && COZYZONES$FIRST_OCEAN_SUPPRESSION_LOGGED.compareAndSet(false, true)) {
+            CozyCrazyZones.LOGGER.info(
+                    "Hearthlands ocean suppression ACTIVE: {} -> {} at {},{} ({:.0f} blocks from geography anchor)",
+                    originalId, targetId, blockX, blockZ, cell.distanceFromSpawn()
+            );
+        }
     }
 
     /**
