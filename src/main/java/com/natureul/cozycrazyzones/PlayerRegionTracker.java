@@ -25,9 +25,9 @@ public final class PlayerRegionTracker {
         State state = STATES.computeIfAbsent(player.getUUID(), id -> new State());
 
         if (player.level().dimension() != Level.OVERWORLD) {
-            if (state.syncedRegion != null) {
-                ZoneNetwork.sync(player, -1);
-                state.syncedRegion = null;
+            if (state.syncedCell != null) {
+                ZoneNetwork.clear(player);
+                state.syncedCell = null;
             }
             state.committedRegion = null;
             return;
@@ -41,9 +41,19 @@ public final class PlayerRegionTracker {
         boolean changed = resolved != state.committedRegion;
         state.committedRegion = resolved;
 
-        if (state.syncedRegion != resolved) {
-            ZoneNetwork.sync(player, resolved.ordinal());
-            state.syncedRegion = resolved;
+        RegionalCell raw = CozyZonesApi.regionalCellAt(level, player.getX(), player.getZ());
+        RegionalCell synced = new RegionalCell(
+                resolved,
+                raw.macroRegion(),
+                raw.influenceBand(),
+                raw.distanceFromSpawn(),
+                raw.regionalStrength(),
+                raw.macroBoundaryStrength()
+        );
+
+        if (!sameDisplayCell(state.syncedCell, synced)) {
+            ZoneNetwork.sync(player, synced);
+            state.syncedCell = synced;
         }
 
         CompoundTag persistent = player.getPersistentData();
@@ -52,7 +62,16 @@ public final class PlayerRegionTracker {
         int cooldown = CozyZonesConfig.ANNOUNCEMENT_COOLDOWN.get();
         boolean cooldownReady = state.lastAnnouncementTick == Integer.MIN_VALUE || player.tickCount - state.lastAnnouncementTick >= cooldown;
 
+        // Full-screen announcements remain radial-only. Cardinal identity lives in the persistent
+        // badge/debug API so walking a warped ecological border never causes title spam.
         if ((changed || neverAnnouncedHere) && cooldownReady) announce(player, resolved, state);
+    }
+
+    private static boolean sameDisplayCell(RegionalCell a, RegionalCell b) {
+        return a != null && b != null
+                && a.radialZone() == b.radialZone()
+                && a.macroRegion() == b.macroRegion()
+                && a.influenceBand() == b.influenceBand();
     }
 
     public static void remove(ServerPlayer player) {
@@ -106,7 +125,7 @@ public final class PlayerRegionTracker {
 
     private static final class State {
         Region committedRegion;
-        Region syncedRegion;
+        RegionalCell syncedCell;
         int lastAnnouncementTick = Integer.MIN_VALUE;
     }
 }

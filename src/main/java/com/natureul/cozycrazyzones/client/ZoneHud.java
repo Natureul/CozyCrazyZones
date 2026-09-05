@@ -2,7 +2,9 @@ package com.natureul.cozycrazyzones.client;
 
 import com.natureul.cozycrazyzones.CozyCrazyZones;
 import com.natureul.cozycrazyzones.CozyZonesConfig;
+import com.natureul.cozycrazyzones.MacroRegion;
 import com.natureul.cozycrazyzones.Region;
+import com.natureul.cozycrazyzones.RegionalInfluenceBand;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
@@ -31,18 +33,28 @@ public final class ZoneHud {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.options.hideGui || minecraft.player == null) return;
         Region region = ClientRegionState.region();
-        if (region == null || !shouldRender(minecraft)) return;
+        MacroRegion macro = ClientRegionState.macroRegion();
+        RegionalInfluenceBand influence = ClientRegionState.influenceBand();
+        if (region == null || influence == null || !shouldRender(minecraft)) return;
 
-        String text = "◆ " + region.displayName().toUpperCase();
+        String text = badgeText(region, macro, influence);
         int textWidth = minecraft.font.width(text);
         int x = (width - textWidth) / 2;
         int y = height - 61;
 
-        // Small translucent plate above the hotbar: visible enough to orient the player,
-        // quiet enough not to become another permanent dashboard element.
         graphics.fill(x - 6, y - 3, x + textWidth + 6, y + 11, 0x76000000);
         graphics.drawString(minecraft.font, text, x, y, region.formatting().getColor() == null ? 0xFFFFFF : region.formatting().getColor(), true);
     };
+
+    static String badgeText(Region region, MacroRegion macro, RegionalInfluenceBand influence) {
+        if (influence == RegionalInfluenceBand.SHARED_CORE || macro == null) {
+            return "◆ " + region.displayName().toUpperCase();
+        }
+        if (influence == RegionalInfluenceBand.CARDINAL_TRANSITION) {
+            return "◆ " + region.displayName().toUpperCase() + " • " + macro.displayName().toUpperCase() + " TRANSITION";
+        }
+        return "◆ " + macro.adjective().toUpperCase() + " " + region.displayName().toUpperCase();
+    }
 
     private static boolean shouldRender(Minecraft minecraft) {
         return switch (CozyZonesConfig.HUD_MODE.get()) {
