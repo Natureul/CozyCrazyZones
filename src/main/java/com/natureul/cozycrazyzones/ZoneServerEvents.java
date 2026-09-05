@@ -11,7 +11,9 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.MobSpawnEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.loading.FMLPaths;
@@ -35,10 +37,24 @@ public final class ZoneServerEvents {
         if (level.dimension() != Level.OVERWORLD) return;
         ResourceLocation id = ForgeRegistries.ENTITY_TYPES.getKey(event.getEntity().getType());
         if (id == null) return;
-        if (!CozyZonesApi.naturalEntityAllowed(level, id, event.getX(), event.getZ())) {
-            // On Forge 1.20.1, canceling FinalizeSpawn only skips finalizeSpawn(). This flag is
-            // specifically required to block the entity from entering the world.
-            event.setSpawnCancelled(true);
+        if (!CozyZonesApi.naturalEntityAllowed(level, id, event.getX(), event.getZ())) event.setSpawnCancelled(true);
+    }
+
+    @SubscribeEvent
+    public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END || !(event.player instanceof ServerPlayer player)) return;
+        if (player.tickCount % 10 == 0) PlayerRegionTracker.tick(player);
+    }
+
+    @SubscribeEvent
+    public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) PlayerRegionTracker.remove(player);
+    }
+
+    @SubscribeEvent
+    public static void onPlayerClone(PlayerEvent.Clone event) {
+        if (event.getOriginal() instanceof ServerPlayer original && event.getEntity() instanceof ServerPlayer replacement) {
+            PlayerRegionTracker.copyPersistentMarker(original, replacement);
         }
     }
 

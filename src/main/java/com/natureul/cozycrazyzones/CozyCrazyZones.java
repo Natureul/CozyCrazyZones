@@ -1,6 +1,7 @@
 package com.natureul.cozycrazyzones;
 
 import com.mojang.logging.LogUtils;
+import com.natureul.cozycrazyzones.network.ZoneNetwork;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
@@ -15,6 +16,7 @@ public final class CozyCrazyZones {
     public CozyCrazyZones() {
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, CozyZonesConfig.COMMON_SPEC);
         ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, CozyZonesConfig.CLIENT_SPEC);
+        ZoneNetwork.register();
         MinecraftForge.EVENT_BUS.register(ZoneServerEvents.class);
     }
 }
