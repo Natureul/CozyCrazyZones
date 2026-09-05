@@ -27,8 +27,12 @@ jobs:
       - name: Package root overlay
         shell: bash
         run: |
+          rm -rf ROOT_OVERLAY
           mkdir -p ROOT_OVERLAY/mods
           cp build/libs/CozyCrazyZones-*.jar ROOT_OVERLAY/mods/
+          if [ -d root_overlay ]; then
+            cp -R root_overlay/. ROOT_OVERLAY/
+          fi
           cd ROOT_OVERLAY
           SAFE_VERSION="${MOD_VERSION//./_}"
           zip -r "../CozyCrazyZones_v${SAFE_VERSION}_ROOT_OVERLAY.zip" .
