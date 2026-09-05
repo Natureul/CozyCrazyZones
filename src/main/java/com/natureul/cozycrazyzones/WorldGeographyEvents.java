@@ -27,6 +27,8 @@ public final class WorldGeographyEvents {
 
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
+        RegionalBiomePostProcessor.clearTransientState();
+        VillageRingPlanner.clear();
         WorldGeographyContext.clear();
     }
 }
