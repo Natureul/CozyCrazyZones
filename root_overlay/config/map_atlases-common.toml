@@ -1,0 +1,22 @@
+[general]
+# CozyCrazyCraft treats the Atlas as the player's persistent exploration map.
+# 10,000 map tiles is effectively unbounded for normal play while staying inside Map Atlases' 1.20.1 range.
+max_map_count = 10000
+accept_paper_for_empty_maps = false
+# Do not consume crafted Empty Maps as the player explores.
+require_empty_maps_to_expand = false
+map_entry_value_multiplier = 1
+pity_activation_map_count = 9
+enable_empty_map_entry_and_fill = true
+# Keep mapping active even if the player moves the Atlas out of the hotbar.
+activation_locations = "INVENTORY"
+creative_teleport = true
+pin_marked_id = "map_atlases:pin"
+light_map = false
+
+[update_logic]
+round_robin = false
+map_updates_per_tick = 1
+multithreaded_update = "SINGLE_PLAYER_ONLY"
+debug_map_updates = false
+markers_update_period = 10
