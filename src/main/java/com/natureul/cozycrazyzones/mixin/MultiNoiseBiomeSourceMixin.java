@@ -1,6 +1,8 @@
 package com.natureul.cozycrazyzones.mixin;
 
 import com.natureul.cozycrazyzones.BiomeRegionality;
+import com.natureul.cozycrazyzones.MacroRegion;
+import com.natureul.cozycrazyzones.Region;
 import com.natureul.cozycrazyzones.RegionalCell;
 import com.natureul.cozycrazyzones.WorldGeographyContext;
 import net.minecraft.core.Holder;
@@ -51,10 +53,35 @@ public abstract class MultiNoiseBiomeSourceMixin {
                 blockX,
                 blockZ
         );
+        targetId = cozyzones$reserveIceMazeForDread(originalId, targetId, cell);
         if (targetId.equals(originalId)) return;
 
         Holder<Biome> replacement = cozyzones$lookup(targetId);
         if (replacement != null) cir.setReturnValue(replacement);
+    }
+
+    /**
+     * In this exact pack Aquamirae marks only frozen_ocean and deep_frozen_ocean with its
+     * #aquamirae:ice_maze biome tag. Keeping Frostmarch merely cold until Dread Reaches therefore
+     * turns the Ice Maze/Cornelia destination into real outer-region geography rather than letting
+     * it consume the northern Wildlands coastline too early.
+     */
+    @Unique
+    private ResourceLocation cozyzones$reserveIceMazeForDread(ResourceLocation originalId,
+                                                               ResourceLocation targetId,
+                                                               RegionalCell cell) {
+        if (cell.macroRegion() != MacroRegion.NORTH || !BiomeRegionality.isOcean(originalId)) return targetId;
+
+        boolean deep = originalId.getPath().startsWith("deep_");
+        if (cell.radialZone() == Region.DREAD_REACHES) {
+            return new ResourceLocation("minecraft", deep ? "deep_frozen_ocean" : "frozen_ocean");
+        }
+
+        String targetPath = targetId.getPath();
+        if ("frozen_ocean".equals(targetPath) || "deep_frozen_ocean".equals(targetPath)) {
+            return new ResourceLocation("minecraft", deep ? "deep_cold_ocean" : "cold_ocean");
+        }
+        return targetId;
     }
 
     @Unique
