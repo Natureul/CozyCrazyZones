@@ -1,0 +1,275 @@
+package com.natureul.cozycrazyzones;
+
+import net.minecraft.core.Holder;
+import net.minecraft.core.QuartPos;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.world.level.biome.Climate;
+import net.minecraft.world.level.chunk.ChunkAccess;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * Regionalizes the already-completed BIOMES-stage chunk palette.
+ *
+ * This intentionally does NOT compete with TerraBlender/Citadel inside
+ * MultiNoiseBiomeSource#getNoiseBiome. TerraBlender gets to produce the native large-scale biome
+ * shapes first; once that asynchronous pass is complete, we rewrite the finished chunk palette.
+ * That makes CozyCrazyZones the final geographic policy without depending on mixin ordering.
+ */
+public final class RegionalBiomePostProcessor {
+    private static final ResourceLocation ASPEN_GLADE = id("biomesoplenty:aspen_glade");
+    private static final ResourceLocation SEASONAL_FOREST = id("biomesoplenty:seasonal_forest");
+    private static final ResourceLocation MOOR = id("biomesoplenty:moor");
+
+    private static final Map<BiomeSource, Map<ResourceLocation, Holder<Biome>>> HOLDER_LOOKUPS =
+            Collections.synchronizedMap(new WeakHashMap<>());
+    private static final ConcurrentMap<ChunkAccess, boolean[]> CONVERTED_OCEAN_MASKS = new ConcurrentHashMap<>();
+
+    private static final AtomicBoolean FIRST_REMAP_LOGGED = new AtomicBoolean();
+    private static final AtomicBoolean FIRST_OCEAN_CONVERSION_LOGGED = new AtomicBoolean();
+    private static final AtomicBoolean FIRST_MISSING_TARGET_LOGGED = new AtomicBoolean();
+
+    private RegionalBiomePostProcessor() {}
+
+    public static void regionalize(ChunkAccess chunk,
+                                   int seaLevel,
+                                   BiomeSource biomeSource,
+                                   Climate.Sampler sampler) {
+        if (!WorldGeographyContext.prepared()) return;
+
+        Map<ResourceLocation, Holder<Biome>> lookup = lookupFor(biomeSource);
+        int minQuartX = QuartPos.fromBlock(chunk.getPos().getMinBlockX());
+        int minQuartZ = QuartPos.fromBlock(chunk.getPos().getMinBlockZ());
+        int surfaceQuartY = QuartPos.fromBlock(seaLevel);
+
+        // Snapshot only the 4x4 surface palette needed by the physical ocean-conversion pass.
+        // LevelChunkSection fills into a recreated palette and swaps it only after each section is
+        // complete, so getNoiseBiome from inside the resolver still reads that section's native
+        // TerraBlender palette.
+        List<Holder<Biome>> nativeSurface = new ArrayList<>(16);
+        for (int qz = 0; qz < 4; qz++) {
+            for (int qx = 0; qx < 4; qx++) {
+                nativeSurface.add(chunk.getNoiseBiome(minQuartX + qx, surfaceQuartY, minQuartZ + qz));
+            }
+        }
+
+        chunk.fillBiomesFromNoise((quartX, quartY, quartZ, ignoredSampler) -> {
+            Holder<Biome> original = chunk.getNoiseBiome(quartX, quartY, quartZ);
+            if (QuartPos.toBlock(quartY) < 48) return original;
+
+            ResourceLocation originalId = original.unwrapKey().map(key -> key.location()).orElse(null);
+            if (originalId == null) return original;
+            if (!BiomeRegionality.isManagedSurfaceBiome(originalId)
+                    && !ASPEN_GLADE.equals(originalId)
+                    && !MOOR.equals(originalId)) {
+                return original;
+            }
+
+            int blockX = QuartPos.toBlock(quartX);
+            int blockZ = QuartPos.toBlock(quartZ);
+            RegionalCell cell = WorldGeographyContext.cellAt(blockX, blockZ);
+            ResourceLocation targetId = remap(originalId, cell, blockX, blockZ);
+            if (targetId.equals(originalId)) return original;
+
+            Holder<Biome> replacement = lookup.get(targetId);
+            if (replacement == null) {
+                if (FIRST_MISSING_TARGET_LOGGED.compareAndSet(false, true)) {
+                    CozyCrazyZones.LOGGER.warn(
+                            "Regional palette wanted {} -> {} at {},{} but the target is absent from this biome source",
+                            originalId, targetId, blockX, blockZ
+                    );
+                }
+                return original;
+            }
+
+            if (FIRST_REMAP_LOGGED.compareAndSet(false, true)) {
+                CozyCrazyZones.LOGGER.info(
+                        "Regional chunk-biome postprocessor ACTIVE: {} -> {} at {},{} ({} / {} / {} blocks)",
+                        originalId,
+                        targetId,
+                        blockX,
+                        blockZ,
+                        cell.radialZone().displayName(),
+                        cell.influenceBand(),
+                        Math.round(cell.distanceFromSpawn())
+                );
+            }
+            return replacement;
+        }, sampler);
+
+        boolean[] converted = new boolean[16];
+        boolean anyConverted = false;
+        for (int qz = 0; qz < 4; qz++) {
+            for (int qx = 0; qx < 4; qx++) {
+                int index = qz * 4 + qx;
+                ResourceLocation before = key(nativeSurface.get(index));
+                ResourceLocation after = key(chunk.getNoiseBiome(minQuartX + qx, surfaceQuartY, minQuartZ + qz));
+                boolean wasOcean = before != null && BiomeRegionality.isOcean(before);
+                boolean isOcean = after != null && BiomeRegionality.isOcean(after);
+                if (wasOcean && !isOcean) {
+                    converted[index] = true;
+                    anyConverted = true;
+                }
+            }
+        }
+
+        if (anyConverted) {
+            CONVERTED_OCEAN_MASKS.put(chunk, converted);
+            if (FIRST_OCEAN_CONVERSION_LOGGED.compareAndSet(false, true)) {
+                CozyCrazyZones.LOGGER.info(
+                        "Hearthlands native-ocean conversion ACTIVE in chunk {},{}; tapered land shaping armed",
+                        chunk.getPos().x, chunk.getPos().z
+                );
+            }
+        }
+    }
+
+    /**
+     * Consumed exactly once by the subsequent NOISE-stage terrain pass.
+     */
+    public static boolean[] takeConvertedOceanMask(ChunkAccess chunk) {
+        return CONVERTED_OCEAN_MASKS.remove(chunk);
+    }
+
+    public static void clearTransientState() {
+        CONVERTED_OCEAN_MASKS.clear();
+        synchronized (HOLDER_LOOKUPS) {
+            HOLDER_LOOKUPS.clear();
+        }
+        FIRST_REMAP_LOGGED.set(false);
+        FIRST_OCEAN_CONVERSION_LOGGED.set(false);
+        FIRST_MISSING_TARGET_LOGGED.set(false);
+    }
+
+    private static ResourceLocation remap(ResourceLocation original,
+                                          RegionalCell cell,
+                                          int blockX,
+                                          int blockZ) {
+        if (ASPEN_GLADE.equals(original)) return remapAspen(cell, blockX, blockZ);
+        if (MOOR.equals(original)) return remapMoor(cell);
+
+        if (BiomeRegionality.isOcean(original) && cell.radialZone() == Region.HEARTHLANDS) {
+            if (HearthlandsOceanPolicy.keepOcean(cell, WorldGeographyContext.worldSeed(), blockX, blockZ)) {
+                return hearthlandsOcean(cell.macroRegion(), original);
+            }
+            return hearthlandsFormerOceanLand(cell, original);
+        }
+
+        ResourceLocation target = BiomeRegionality.remap(
+                original,
+                cell,
+                WorldGeographyContext.worldSeed(),
+                blockX,
+                blockZ
+        );
+
+        // Aquamirae's Ice Maze tags frozen/deep-frozen ocean. Keep the northern sea merely cold
+        // through Frontier/Wildlands; frozen ocean is reserved for Frostmarch Dread Reaches.
+        if (BiomeRegionality.isOcean(original) && cell.macroRegion() == MacroRegion.NORTH) {
+            boolean deep = original.getPath().startsWith("deep_");
+            if (cell.radialZone() == Region.DREAD_REACHES) {
+                return id(deep ? "minecraft:deep_frozen_ocean" : "minecraft:frozen_ocean");
+            }
+            if (target.getPath().equals("frozen_ocean") || target.getPath().equals("deep_frozen_ocean")) {
+                return id(deep ? "minecraft:deep_cold_ocean" : "minecraft:cold_ocean");
+            }
+        }
+        return target;
+    }
+
+    /** Aspen is deliberately western/autumnal now, not Shared-Core/common. */
+    private static ResourceLocation remapAspen(RegionalCell cell, int blockX, int blockZ) {
+        if (cell.influenceBand() == RegionalInfluenceBand.SHARED_CORE || cell.macroBoundaryStrength() < 0.42D) {
+            return id("minecraft:birch_forest");
+        }
+        if (cell.macroRegion() == MacroRegion.WEST) {
+            return switch (cell.radialZone()) {
+                case HEARTHLANDS, FRONTIER -> ASPEN_GLADE;
+                case WILDLANDS -> id("biomesoplenty:redwood_forest");
+                case DREAD_REACHES -> id("biomesoplenty:ominous_woods");
+            };
+        }
+        // Re-use the established autumn-forest profile so Aspen cannot leak into another macro-region.
+        return BiomeRegionality.remap(
+                SEASONAL_FOREST,
+                cell,
+                WorldGeographyContext.worldSeed(),
+                blockX,
+                blockZ
+        );
+    }
+
+    private static ResourceLocation remapMoor(RegionalCell cell) {
+        if (cell.influenceBand() == RegionalInfluenceBand.SHARED_CORE || cell.macroBoundaryStrength() < 0.42D) {
+            return id("minecraft:meadow");
+        }
+        return switch (cell.macroRegion()) {
+            case EAST -> MOOR;
+            case NORTH -> id(cell.radialZone().atLeast(Region.FRONTIER)
+                    ? "biomesoplenty:muskeg" : "biomesoplenty:bog");
+            case SOUTH -> id(cell.radialZone().atLeast(Region.FRONTIER)
+                    ? "minecraft:savanna_plateau" : "minecraft:savanna");
+            case WEST -> id(cell.radialZone().atLeast(Region.WILDLANDS)
+                    ? "biomesoplenty:redwood_forest" : "biomesoplenty:seasonal_forest");
+        };
+    }
+
+    private static ResourceLocation hearthlandsOcean(MacroRegion region, ResourceLocation original) {
+        boolean deep = original.getPath().startsWith("deep_");
+        return switch (region) {
+            case NORTH -> id(deep ? "minecraft:deep_cold_ocean" : "minecraft:cold_ocean");
+            case EAST, SOUTH -> id(deep ? "minecraft:deep_lukewarm_ocean" : "minecraft:lukewarm_ocean");
+            case WEST -> id(deep ? "minecraft:deep_ocean" : "minecraft:ocean");
+        };
+    }
+
+    private static ResourceLocation hearthlandsFormerOceanLand(RegionalCell cell, ResourceLocation original) {
+        if (cell.influenceBand() == RegionalInfluenceBand.SHARED_CORE) {
+            return Math.floorMod(original.toString().hashCode(), 2) == 0
+                    ? id("minecraft:plains")
+                    : id("biomesoplenty:grassland");
+        }
+
+        return switch (cell.macroRegion()) {
+            case NORTH -> pick(original, "biomesoplenty:field", "minecraft:meadow", "minecraft:taiga");
+            case EAST -> pick(original, "biomesoplenty:overgrown_greens", "biomesoplenty:forested_field", "minecraft:plains");
+            case SOUTH -> pick(original, "minecraft:savanna", "biomesoplenty:lush_savanna", "biomesoplenty:scrubland");
+            case WEST -> pick(original, "biomesoplenty:aspen_glade", "biomesoplenty:seasonal_forest", "biomesoplenty:prairie");
+        };
+    }
+
+    private static Map<ResourceLocation, Holder<Biome>> lookupFor(BiomeSource source) {
+        synchronized (HOLDER_LOOKUPS) {
+            return HOLDER_LOOKUPS.computeIfAbsent(source, ignored -> {
+                Map<ResourceLocation, Holder<Biome>> result = new HashMap<>();
+                for (Holder<Biome> holder : source.possibleBiomes()) {
+                    ResourceLocation id = key(holder);
+                    if (id != null) result.put(id, holder);
+                }
+                return Map.copyOf(result);
+            });
+        }
+    }
+
+    private static ResourceLocation key(Holder<Biome> holder) {
+        return holder.unwrapKey().map(resourceKey -> resourceKey.location()).orElse(null);
+    }
+
+    private static ResourceLocation pick(ResourceLocation original, String... candidates) {
+        return id(candidates[Math.floorMod(original.toString().hashCode(), candidates.length)]);
+    }
+
+    private static ResourceLocation id(String value) {
+        return new ResourceLocation(value);
+    }
+}
