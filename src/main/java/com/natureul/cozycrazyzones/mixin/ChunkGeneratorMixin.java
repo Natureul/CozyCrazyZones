@@ -1,6 +1,9 @@
 package com.natureul.cozycrazyzones.mixin;
 
 import com.natureul.cozycrazyzones.CozyZonesApi;
+import com.natureul.cozycrazyzones.MacroRegion;
+import com.natureul.cozycrazyzones.Region;
+import com.natureul.cozycrazyzones.RegionalCell;
 import com.natureul.cozycrazyzones.ZoneRuleRegistry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.SectionPos;
@@ -21,8 +24,18 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import java.util.Set;
+
 @Mixin(ChunkGenerator.class)
 public abstract class ChunkGeneratorMixin {
+    private static final Set<ResourceLocation> COZYZONES$AQUAMIRAE_DREAD_STRUCTURES = Set.of(
+            new ResourceLocation("aquamirae", "outpost"),
+            new ResourceLocation("aquamirae", "shelter"),
+            new ResourceLocation("aquamirae", "ship"),
+            new ResourceLocation("aquamirae", "surface/arch"),
+            new ResourceLocation("aquamirae", "surface/spiral")
+    );
+
     @Inject(method = "tryGenerateStructure", at = @At("HEAD"), cancellable = true)
     private void cozyzones$gateStructure(StructureSet.StructureSelectionEntry entry,
                                         StructureManager structureManager,
@@ -50,6 +63,18 @@ public abstract class ChunkGeneratorMixin {
 
         double x = chunkPos.getMinBlockX() + 8.0D;
         double z = chunkPos.getMinBlockZ() + 8.0D;
+
+        // Aquamirae's registered Ice-Maze surface structures are endgame Frostmarch content.
+        // Keep this independent of biome remapping so another biome modifier cannot leak one into
+        // the Hearthlands or another macro-region.
+        if (COZYZONES$AQUAMIRAE_DREAD_STRUCTURES.contains(id)) {
+            RegionalCell cell = CozyZonesApi.regionalCellAt(level, x, z);
+            if (cell.radialZone() != Region.DREAD_REACHES || cell.macroRegion() != MacroRegion.NORTH) {
+                cir.setReturnValue(false);
+                return;
+            }
+        }
+
         if (!CozyZonesApi.structureAllowed(level, id, x, z)) cir.setReturnValue(false);
     }
 }
