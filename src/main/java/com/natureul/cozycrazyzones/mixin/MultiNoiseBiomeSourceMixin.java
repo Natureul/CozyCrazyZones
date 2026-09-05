@@ -102,22 +102,22 @@ public abstract class MultiNoiseBiomeSourceMixin {
 
         if (COZYZONES$FIRST_REMAP_LOGGED.compareAndSet(false, true)) {
             CozyCrazyZones.LOGGER.info(
-                    "Regional biome remapper ACTIVE after native biome selection: {} -> {} at {},{} ({} / {} / {:.0f} blocks)",
+                    "Regional biome remapper ACTIVE after native biome selection: {} -> {} at {},{} ({} / {} / {} blocks)",
                     originalId,
                     targetId,
                     blockX,
                     blockZ,
                     cell.radialZone().displayName(),
                     cell.influenceBand(),
-                    cell.distanceFromSpawn()
+                    Math.round(cell.distanceFromSpawn())
             );
         }
         if (BiomeRegionality.isOcean(originalId)
                 && !BiomeRegionality.isOcean(targetId)
                 && COZYZONES$FIRST_OCEAN_SUPPRESSION_LOGGED.compareAndSet(false, true)) {
             CozyCrazyZones.LOGGER.info(
-                    "Hearthlands ocean suppression ACTIVE: {} -> {} at {},{} ({:.0f} blocks from geography anchor)",
-                    originalId, targetId, blockX, blockZ, cell.distanceFromSpawn()
+                    "Hearthlands ocean suppression ACTIVE: {} -> {} at {},{} ({} blocks from geography anchor)",
+                    originalId, targetId, blockX, blockZ, Math.round(cell.distanceFromSpawn())
             );
         }
     }
