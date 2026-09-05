@@ -19,6 +19,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.8'
+      - name: Read mod version
+        shell: bash
+        run: echo "MOD_VERSION=$(grep '^mod_version=' gradle.properties | cut -d= -f2)" >> "$GITHUB_ENV"
       - name: Build reobfuscated Forge jar
         run: gradle build --stacktrace
       - name: Package root overlay
@@ -27,10 +30,11 @@ jobs:
           mkdir -p ROOT_OVERLAY/mods
           cp build/libs/CozyCrazyZones-*.jar ROOT_OVERLAY/mods/
           cd ROOT_OVERLAY
-          zip -r ../CozyCrazyZones_v0_1_ROOT_OVERLAY.zip .
+          SAFE_VERSION="${MOD_VERSION//./_}"
+          zip -r "../CozyCrazyZones_v${SAFE_VERSION}_ROOT_OVERLAY.zip" .
       - uses: actions/upload-artifact@v4
         with:
-          name: CozyCrazyZones-v0.1-build
+          name: CozyCrazyZones-v${{ env.MOD_VERSION }}-build
           path: |
             build/libs/CozyCrazyZones-*.jar
-            CozyCrazyZones_v0_1_ROOT_OVERLAY.zip
+            CozyCrazyZones_v*_ROOT_OVERLAY.zip
