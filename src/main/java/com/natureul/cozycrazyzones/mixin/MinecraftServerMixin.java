@@ -1,6 +1,7 @@
 package com.natureul.cozycrazyzones.mixin;
 
 import com.natureul.cozycrazyzones.CozyCrazyZones;
+import com.natureul.cozycrazyzones.StarterLandSelector;
 import com.natureul.cozycrazyzones.WorldGeographyContext;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
@@ -42,6 +43,18 @@ public abstract class MinecraftServerMixin {
                                                         boolean generateBonusChest,
                                                         boolean debugWorld,
                                                         CallbackInfo ci) {
+        BlockPos vanillaSpawn = level.getSharedSpawnPos();
+        BlockPos selectedSpawn = debugWorld ? vanillaSpawn : StarterLandSelector.choose(level, vanillaSpawn);
+
+        if (!selectedSpawn.equals(vanillaSpawn)) {
+            levelData.setSpawn(selectedSpawn, 0.0F);
+            CozyCrazyZones.LOGGER.info(
+                    "Moved initial shared spawn from {} to naturally land-rich Hearthlands center {}",
+                    vanillaSpawn,
+                    selectedSpawn
+            );
+        }
+
         BlockPos spawn = level.getSharedSpawnPos();
         WorldGeographyContext.setSharedSpawn(spawn);
         CozyCrazyZones.LOGGER.info("Initial shared spawn selected {}; regional worldgen anchor snapped before start-region generation", spawn);
