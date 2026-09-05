@@ -53,6 +53,15 @@ public final class ZoneServerEvents {
     }
 
     @SubscribeEvent
+    public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            // Push the badge/title state as soon as the client connection is live instead of
+            // waiting for the next ten-tick sampling interval.
+            PlayerRegionTracker.tick(player);
+        }
+    }
+
+    @SubscribeEvent
     public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
         if (event.phase != TickEvent.Phase.END || !(event.player instanceof ServerPlayer player)) return;
         if (player.tickCount % 10 == 0) PlayerRegionTracker.tick(player);
