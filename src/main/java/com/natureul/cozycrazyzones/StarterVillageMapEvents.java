@@ -7,7 +7,7 @@ import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
-/** Server-side retry/lifecycle hooks for the starter-house Atlas handoff. */
+/** Server-side retry/lifecycle hooks for the personal starter Atlas + village guide. */
 @Mod.EventBusSubscriber(modid = CozyCrazyZones.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class StarterVillageMapEvents {
     private StarterVillageMapEvents() {}
@@ -15,6 +15,7 @@ public final class StarterVillageMapEvents {
     @SubscribeEvent
     public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
+            StarterAtlasService.ensureStarterAtlas(player);
             StarterVillageMapService.begin(player);
         }
     }
