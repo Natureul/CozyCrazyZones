@@ -42,7 +42,11 @@ public final class CozyZonesConfig {
 
         ForgeConfigSpec.Builder client = new ForgeConfigSpec.Builder();
         client.push("hud");
-        HUD_MODE = client.comment("ATLAS_OWNED shows the persistent badge only while carrying a Map Atlases atlas. Entry titles always remain enabled.").defineEnum("mode", HudMode.ATLAS_OWNED);
+        // persistentMode is intentionally a new key (v0.3.2). Existing v0.3.1 installs therefore
+        // receive the new ALWAYS default instead of silently retaining the old ATLAS_OWNED value.
+        HUD_MODE = client.comment(
+                "Persistent zone badge mode. ALWAYS is the intended CozyCrazyCraft default; ATLAS_OWNED restricts it to players carrying a Map Atlases atlas; OFF hides it."
+        ).defineEnum("persistentMode", HudMode.ALWAYS);
         client.pop();
         CLIENT_SPEC = client.build();
     }
