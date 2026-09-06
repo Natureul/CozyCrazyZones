@@ -10,7 +10,8 @@
     "MapItemSavedDataAccessor",
     "NoiseBasedChunkGeneratorMixin",
     "MinecraftServerMixin",
-    "AspenBiomeGuardMixin"
+    "AspenBiomeGuardMixin",
+    "ServerLevelStructureLocatorMixin"
   ],
   "injectors": {
     "defaultRequire": 1

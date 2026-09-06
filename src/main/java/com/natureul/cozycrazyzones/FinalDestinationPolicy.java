@@ -37,7 +37,11 @@ public final class FinalDestinationPolicy {
 
     public static boolean allowsStructure(ResourceLocation structureId, RegionalCell cell) {
         MacroRegion expected = FINAL_STRUCTURES.get(structureId);
-        if (expected == null) return true;
+        return expected == null || allowsFinalLocation(expected, cell);
+    }
+
+    /** Shared geography predicate used by generation, biome territory and player-facing locators. */
+    public static boolean allowsFinalLocation(MacroRegion expected, RegionalCell cell) {
         return cell.radialZone() == Region.DREAD_REACHES
                 && cell.influenceBand() == RegionalInfluenceBand.ESTABLISHED
                 && cell.macroRegion() == expected
@@ -50,10 +54,7 @@ public final class FinalDestinationPolicy {
      * permitted to become Maze territory inside the finite northern final-destination belt.
      */
     public static boolean iceMazeTerritory(RegionalCell cell) {
-        return cell.radialZone() == Region.DREAD_REACHES
-                && cell.influenceBand() == RegionalInfluenceBand.ESTABLISHED
-                && cell.macroRegion() == MacroRegion.NORTH
-                && cell.distanceFromSpawn() <= CozyZonesConfig.effectiveFinalDestinationMaxRadius();
+        return allowsFinalLocation(MacroRegion.NORTH, cell);
     }
 
     public static boolean isIceMazeOcean(ResourceLocation biomeId) {
