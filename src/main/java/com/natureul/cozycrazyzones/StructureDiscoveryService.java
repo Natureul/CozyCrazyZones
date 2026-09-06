@@ -8,20 +8,20 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.tags.StructureTags;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 
 import java.util.Map;
 
 /**
- * Cheap, loaded-position-only structure discovery.
+ * Cheap loaded-position-only named-place discovery.
  *
- * There is deliberately no radius scan and no locate call here. Once per second we ask Minecraft
- * which already-generated structures contain the player's current block. v0.3.17 enables villages;
- * the category substrate is intentionally ready for the later dungeon/temple/ruin pass.
+ * Once per second we ask Minecraft which already-generated structures contain the player's current
+ * block. There are no radius scans and no locate calls. The resulting place name is world-persistent;
+ * player discovery state and Atlas markers remain per-player.
  */
 public final class StructureDiscoveryService {
     private static final String DISCOVERED_TAG = "cozycrazyzones:discovered_structures";
@@ -39,12 +39,15 @@ public final class StructureDiscoveryService {
         Registry<Structure> registry = level.registryAccess().registryOrThrow(Registries.STRUCTURE);
         for (Structure structure : structures.keySet()) {
             ResourceLocation structureId = registry.getKey(structure);
-            if (structureId == null || !isVillage(registry, structure, structureId)) continue;
+            if (structureId == null) continue;
+
+            StructureDiscoveryProfile profile = StructureDiscoveryProfile.classify(registry, structure, structureId);
+            if (profile == null) continue;
 
             StructureStart start = level.structureManager().getStructureAt(player.blockPosition(), structure);
             if (start == null || !start.isValid() || !start.getBoundingBox().isInside(player.blockPosition())) continue;
 
-            discoverVillage(player, level, start);
+            discover(player, level, structureId, start, profile);
         }
     }
 
@@ -53,50 +56,80 @@ public final class StructureDiscoveryService {
         if (!old.isEmpty()) replacement.getPersistentData().put(DISCOVERED_TAG, old.copy());
     }
 
-    private static boolean isVillage(Registry<Structure> registry, Structure structure, ResourceLocation id) {
-        boolean tagged = registry.getTag(StructureTags.VILLAGE)
-                .map(set -> set.stream().anyMatch(holder -> holder.value() == structure))
-                .orElse(false);
-        // A few structure mods neglect the vanilla tag. The fallback catches sensible village ids
-        // while staying narrow enough not to turn every settlement-like dungeon into a village.
-        return tagged || id.getPath().contains("village");
-    }
-
-    private static void discoverVillage(ServerPlayer player, ServerLevel level, StructureStart start) {
+    private static void discover(ServerPlayer player,
+                                 ServerLevel level,
+                                 ResourceLocation structureId,
+                                 StructureStart start,
+                                 StructureDiscoveryProfile profile) {
         ChunkPos startChunk = start.getChunkPos();
-        String discoveryKey = VillageNameSavedData.keyFor(startChunk);
-        CompoundTag discovered = player.getPersistentData().getCompound(DISCOVERED_TAG);
-        if (discovered.getBoolean(discoveryKey)) return;
+        String discoveryKey = profile.category() == DiscoveryCategory.VILLAGE
+                ? VillageNameSavedData.keyFor(startChunk)
+                : StructureNameSavedData.keyFor(structureId, startChunk);
 
-        int x = startChunk.getMiddleBlockX();
-        int z = startChunk.getMiddleBlockZ();
-        MacroRegion region = CozyZonesApi.regionalCellAt(level, x, z).macroRegion();
-        String name = VillageNameSavedData.get(level).getOrAssign(region, level.getSeed(), startChunk);
+        BoundingBox box = start.getBoundingBox();
+        int x = (box.minX() + box.maxX()) / 2;
+        int z = (box.minZ() + box.maxZ()) / 2;
         BlockPos marker = new BlockPos(x, player.blockPosition().getY(), z);
+        MacroRegion region = CozyZonesApi.regionalCellAt(level, x, z).macroRegion();
 
-        // Mark discovered before presentation: even if a third-party Atlas renderer throws later,
-        // walking around the same village will never spam the cue every second.
+        String name = profile.category() == DiscoveryCategory.VILLAGE
+                ? VillageNameSavedData.get(level).getOrAssign(region, level.getSeed(), startChunk)
+                : StructureNameSavedData.get(level).getOrAssign(profile, region, level.getSeed(), structureId, startChunk);
+
+        CompoundTag discovered = player.getPersistentData().getCompound(DISCOVERED_TAG);
+        if (discovered.getBoolean(discoveryKey)) {
+            // v0.3.17 knew only village booleans + a Moonlight pin. Re-entering an old discovery
+            // silently upgrades it into the permanent named/category marker ledger without replaying
+            // the announcement or stinger.
+            if (!AtlasDiscoveryMarkerService.hasKnownMarker(player, discoveryKey)) {
+                AtlasDiscoveryMarkerService.enqueue(
+                        player,
+                        discoveryKey,
+                        profile.category(),
+                        name,
+                        marker,
+                        profile.icon()
+                );
+            }
+            return;
+        }
+
+        // Commit discovery before presentation. A third-party Atlas error can never cause repeated
+        // title/audio spam while the player walks around inside a large structure.
         discovered.putBoolean(discoveryKey, true);
         player.getPersistentData().put(DISCOVERED_TAG, discovered);
 
         player.displayClientMessage(
-                Component.literal("✦ Village discovered: ")
+                Component.literal("✦ " + profile.kind() + " discovered: ")
                         .append(Component.literal(name).withStyle(region.formatting()))
                         .append(Component.literal(" · " + region.displayName())),
                 true
         );
-        StingerService.queueVillage(player, region);
+
+        if (profile.category() == DiscoveryCategory.VILLAGE) {
+            StingerService.queueVillage(player, region);
+        } else {
+            StingerService.queueDiscovery(player, profile.category(), region, profile.major());
+        }
+
         AtlasDiscoveryMarkerService.enqueue(
                 player,
                 discoveryKey,
-                DiscoveryCategory.VILLAGE,
+                profile.category(),
                 name,
-                marker
+                marker,
+                profile.icon()
         );
 
         CozyCrazyZones.LOGGER.info(
-                "{} discovered village '{}' at start chunk {},{} ({})",
-                player.getGameProfile().getName(), name, startChunk.x, startChunk.z, region.displayName()
+                "{} discovered {} '{}' [{}] at start chunk {},{} ({})",
+                player.getGameProfile().getName(),
+                profile.kind(),
+                name,
+                structureId,
+                startChunk.x,
+                startChunk.z,
+                region.displayName()
         );
     }
 }

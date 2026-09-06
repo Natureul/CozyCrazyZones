@@ -7,7 +7,7 @@ import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
-/** Server-side retry/lifecycle hooks for the personal starter Atlas and shared Hearthlands desk map. */
+/** Server-side retry/lifecycle hooks for the personal starter Atlas and starter desk decoration. */
 @Mod.EventBusSubscriber(modid = CozyCrazyZones.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class StarterVillageMapEvents {
     private StarterVillageMapEvents() {}
@@ -15,11 +15,11 @@ public final class StarterVillageMapEvents {
     @SubscribeEvent
     public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
-            // Grant the personal Atlas first, then claim/convert the decorative desk frame into the
-            // real filled Hearthlands map before Atlas routing looks for legacy frame-held Atlases.
-            // Finally reserve those same four printed names in the world-global discovery ledger.
+            // The personal Atlas is the navigation system now. Before exact-route linking inspects
+            // nearby item frames, retire the old desk Atlas/map into a simple framed compass so the
+            // route service cannot mistake decorative furniture for the player's Atlas.
             StarterAtlasService.ensureStarterAtlas(player);
-            StarterDeskVillageMapService.begin(player);
+            StarterDeskDecorationService.begin(player);
             StarterVillageMapService.begin(player);
             VillageNameBootstrapService.begin(player);
         }
@@ -28,9 +28,8 @@ public final class StarterVillageMapEvents {
     @SubscribeEvent
     public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
         if (event.phase == TickEvent.Phase.END && event.player instanceof ServerPlayer player) {
-            // Same ordering during retries: if the starter entities arrive a tick late, the desk
-            // frame is still converted before the exact-route service can mistake it for the player Atlas.
-            StarterDeskVillageMapService.tick(player);
+            // Decoration retry stays first for the same race-avoidance reason as login.
+            StarterDeskDecorationService.tick(player);
             StarterVillageMapService.tick(player);
             VillageNameBootstrapService.tick(player);
         }
@@ -40,7 +39,7 @@ public final class StarterVillageMapEvents {
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             StarterVillageMapService.remove(player);
-            StarterDeskVillageMapService.remove(player);
+            StarterDeskDecorationService.remove(player);
             VillageNameBootstrapService.remove(player);
         }
     }
@@ -48,7 +47,7 @@ public final class StarterVillageMapEvents {
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
         StarterVillageMapService.clear();
-        StarterDeskVillageMapService.clear();
+        StarterDeskDecorationService.clear();
         VillageNameBootstrapService.clear();
     }
 }

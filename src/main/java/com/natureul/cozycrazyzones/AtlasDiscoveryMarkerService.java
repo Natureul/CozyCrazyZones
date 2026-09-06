@@ -1,5 +1,6 @@
 package com.natureul.cozycrazyzones;
 
+import com.natureul.cozycrazyzones.mixin.MapItemSavedDataAccessor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -9,26 +10,36 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.MapItem;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import javax.annotation.Nullable;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
- * Adds discoveries to the player's Map Atlases atlas without forcing remote chunk/map generation.
+ * Persistent discovered-place layer for Map Atlases.
  *
- * Discoveries are queued in persistent player NBT. If the Atlas is in a chest when a village is
- * found, the marker waits and is installed the next time that player carries an Atlas. Only one
- * pending marker is processed per second, keeping this effectively free during ordinary play.
+ * Map Atlases uses vanilla MapItemSavedData tiles, so CozyCrazyZones can give categories genuinely
+ * different symbols without bundling a second map renderer: village icons, mansion silhouettes,
+ * monument icons, colored banners, target-X ruins, red-X dungeons, etc. Vanilla's arbitrary named
+ * decorations are not guaranteed to survive every map reload path, so the player's compact known-
+ * place ledger reasserts a handful each second while an Atlas is carried.
  */
 public final class AtlasDiscoveryMarkerService {
     private static final ResourceLocation ATLAS_ID = new ResourceLocation("map_atlases", "atlas");
     private static final String PENDING_TAG = "cozycrazyzones:pending_atlas_markers";
+    private static final String KNOWN_TAG = "cozycrazyzones:known_atlas_markers";
     private static final byte DEFAULT_SCALE = 2;
+    private static final int REFRESH_BATCH = 8;
+
+    private static final Map<UUID, Integer> REFRESH_CURSOR = new HashMap<>();
 
     private AtlasDiscoveryMarkerService() {}
 
@@ -37,68 +48,97 @@ public final class AtlasDiscoveryMarkerService {
                                DiscoveryCategory category,
                                String name,
                                BlockPos pos) {
+        enqueue(player, discoveryKey, category, name, pos, category.defaultDecorationType());
+    }
+
+    public static void enqueue(ServerPlayer player,
+                               String discoveryKey,
+                               DiscoveryCategory category,
+                               String name,
+                               BlockPos pos,
+                               MapDecoration.Type icon) {
+        CompoundTag marker = markerTag(category, name, pos, icon);
+
+        CompoundTag known = player.getPersistentData().getCompound(KNOWN_TAG);
+        known.put(discoveryKey, marker.copy());
+        player.getPersistentData().put(KNOWN_TAG, known);
+
         CompoundTag pending = player.getPersistentData().getCompound(PENDING_TAG);
-        CompoundTag marker = new CompoundTag();
-        marker.putString("Category", category.name());
-        marker.putString("Name", name);
-        marker.putInt("X", pos.getX());
-        marker.putInt("Z", pos.getZ());
         pending.put(discoveryKey, marker);
         player.getPersistentData().put(PENDING_TAG, pending);
     }
 
+    public static boolean hasKnownMarker(ServerPlayer player, String discoveryKey) {
+        return player.getPersistentData().getCompound(KNOWN_TAG).contains(discoveryKey);
+    }
+
     public static void tick(ServerPlayer player) {
         if (player.serverLevel().dimension() != Level.OVERWORLD || !ModList.get().isLoaded("map_atlases")) return;
-        CompoundTag pending = player.getPersistentData().getCompound(PENDING_TAG);
-        if (pending.isEmpty()) return;
-
         ItemStack atlas = findAtlas(player);
         if (atlas == null) return;
 
-        String key = pending.getAllKeys().stream().findFirst().orElse(null);
-        if (key == null) return;
-        CompoundTag marker = pending.getCompound(key);
-
-        DiscoveryCategory category;
-        try {
-            category = DiscoveryCategory.valueOf(marker.getString("Category"));
-        } catch (IllegalArgumentException ex) {
-            pending.remove(key);
-            player.getPersistentData().put(PENDING_TAG, pending);
-            return;
+        CompoundTag pending = player.getPersistentData().getCompound(PENDING_TAG);
+        String pendingKey = pending.getAllKeys().stream().findFirst().orElse(null);
+        if (pendingKey != null) {
+            CompoundTag marker = pending.getCompound(pendingKey);
+            if (installMarker(player.serverLevel(), atlas, pendingKey, marker, true, true)) {
+                pending.remove(pendingKey);
+                player.getPersistentData().put(PENDING_TAG, pending);
+            }
         }
 
-        BlockPos pos = new BlockPos(marker.getInt("X"), 64, marker.getInt("Z"));
-        if (installMarker(player.serverLevel(), atlas, pos, category, marker.getString("Name"))) {
-            pending.remove(key);
-            player.getPersistentData().put(PENDING_TAG, pending);
-        }
+        refreshKnownBatch(player, atlas);
     }
 
     public static void copyPersistentState(ServerPlayer original, ServerPlayer replacement) {
-        CompoundTag old = original.getPersistentData().getCompound(PENDING_TAG);
-        if (!old.isEmpty()) replacement.getPersistentData().put(PENDING_TAG, old.copy());
+        CompoundTag pending = original.getPersistentData().getCompound(PENDING_TAG);
+        if (!pending.isEmpty()) replacement.getPersistentData().put(PENDING_TAG, pending.copy());
+        CompoundTag known = original.getPersistentData().getCompound(KNOWN_TAG);
+        if (!known.isEmpty()) replacement.getPersistentData().put(KNOWN_TAG, known.copy());
     }
 
-    @Nullable
-    private static ItemStack findAtlas(ServerPlayer player) {
-        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
-            ItemStack stack = player.getInventory().getItem(slot);
-            if (isAtlas(stack)) return stack;
+    public static void removeRuntimeState(ServerPlayer player) {
+        REFRESH_CURSOR.remove(player.getUUID());
+    }
+
+    private static CompoundTag markerTag(DiscoveryCategory category,
+                                         String name,
+                                         BlockPos pos,
+                                         MapDecoration.Type icon) {
+        CompoundTag marker = new CompoundTag();
+        marker.putString("Category", category.name());
+        marker.putString("Name", name);
+        marker.putString("Icon", icon.name());
+        marker.putInt("X", pos.getX());
+        marker.putInt("Z", pos.getZ());
+        return marker;
+    }
+
+    private static void refreshKnownBatch(ServerPlayer player, ItemStack atlas) {
+        CompoundTag known = player.getPersistentData().getCompound(KNOWN_TAG);
+        if (known.isEmpty()) return;
+
+        List<String> keys = new ArrayList<>(known.getAllKeys());
+        keys.sort(String::compareTo);
+        int cursor = Math.floorMod(REFRESH_CURSOR.getOrDefault(player.getUUID(), 0), keys.size());
+        int count = Math.min(REFRESH_BATCH, keys.size());
+
+        for (int i = 0; i < count; i++) {
+            String key = keys.get((cursor + i) % keys.size());
+            installMarker(player.serverLevel(), atlas, key, known.getCompound(key), false, false);
         }
-        ItemStack offhand = player.getOffhandItem();
-        return isAtlas(offhand) ? offhand : null;
-    }
-
-    private static boolean isAtlas(ItemStack stack) {
-        return stack != null && !stack.isEmpty() && ATLAS_ID.equals(ForgeRegistries.ITEMS.getKey(stack.getItem()));
+        REFRESH_CURSOR.put(player.getUUID(), (cursor + count) % keys.size());
     }
 
     private static boolean installMarker(ServerLevel level,
                                          ItemStack atlas,
-                                         BlockPos pos,
-                                         DiscoveryCategory category,
-                                         String name) {
+                                         String discoveryKey,
+                                         CompoundTag marker,
+                                         boolean allowCreateMap,
+                                         boolean clearOldMoonlightPin) {
+        MarkerRecord record = parse(marker);
+        if (record == null) return true; // malformed legacy entry: drop it rather than retry forever
+
         try {
             Class<?> atlasItemClass = Class.forName("pepjebs.mapatlases.item.MapAtlasItem");
             Method getMaps = atlasItemClass.getMethod("getMaps", ItemStack.class, Level.class);
@@ -116,11 +156,13 @@ public final class AtlasDiscoveryMarkerService {
                     : DEFAULT_SCALE;
 
             int[] ids = (int[]) getAllIds.invoke(collection);
-            MapItemSavedData data = findCoveringMap(level, ids, pos, scale);
+            MapItemSavedData data = findCoveringMap(level, ids, record.pos(), scale);
             if (data == null) {
-                // The player is physically at the discovery, so adding its local tile reveals no
-                // remote terrain. It merely lets the Atlas remember the place the player just found.
-                ItemStack map = MapItem.create(level, pos.getX(), pos.getZ(), scale, true, true);
+                if (!allowCreateMap) return false;
+
+                // This location was physically discovered already. Adding its local tile records
+                // explored ground; it is not a /locate-style remote reveal.
+                ItemStack map = MapItem.create(level, record.pos().getX(), record.pos().getZ(), scale, true, true);
                 Integer mapId = MapItem.getMapId(map);
                 data = MapItem.getSavedData(map, level);
                 if (mapId == null || data == null) return false;
@@ -129,16 +171,83 @@ public final class AtlasDiscoveryMarkerService {
                 if (added instanceof Boolean accepted && !accepted) return false;
             }
 
-            // Replace the starter guide's generic marker (or an earlier retry) at this exact block
-            // with the authoritative discovered-place marker and its permanent name.
-            removeCustomMarkersAt(data, pos);
-            addMoonlightDecoration(level, data, pos, category.atlasMarkerId(), Component.literal(name));
+            if (clearOldMoonlightPin) {
+                int radius = record.category() == DiscoveryCategory.VILLAGE ? 96 : 24;
+                removeCustomMarkersNear(data, record.pos(), radius);
+            }
+
+            addVanillaDecoration(level, data, discoveryKey, record);
             data.setDirty();
             return true;
         } catch (Throwable ex) {
-            CozyCrazyZones.LOGGER.warn("Could not add discovered {} '{}' to Map Atlases; will retry", category, name, ex);
+            if (allowCreateMap) {
+                CozyCrazyZones.LOGGER.warn(
+                        "Could not add discovered {} '{}' to Map Atlases; will retry",
+                        record.category(), record.name(), ex
+                );
+            }
             return false;
         }
+    }
+
+    private static void addVanillaDecoration(ServerLevel level,
+                                             MapItemSavedData data,
+                                             String discoveryKey,
+                                             MarkerRecord record) {
+        MapItemSavedDataAccessor accessor = (MapItemSavedDataAccessor) (Object) data;
+        accessor.cozyzones$addNamedDecoration(
+                record.icon(),
+                level,
+                decorationId(discoveryKey),
+                record.pos().getX(),
+                record.pos().getZ(),
+                180.0D,
+                Component.literal(record.name())
+        );
+    }
+
+    @Nullable
+    private static MarkerRecord parse(CompoundTag marker) {
+        if (marker == null || marker.isEmpty()) return null;
+        DiscoveryCategory category;
+        try {
+            category = DiscoveryCategory.valueOf(marker.getString("Category"));
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+
+        MapDecoration.Type icon = category.defaultDecorationType();
+        String iconName = marker.getString("Icon");
+        if (!iconName.isBlank()) {
+            try {
+                icon = MapDecoration.Type.valueOf(iconName);
+            } catch (IllegalArgumentException ignored) {
+                // Keep category default when an old/removed enum value is encountered.
+            }
+        }
+
+        String name = marker.getString("Name");
+        if (name.isBlank()) name = category.displayName();
+        return new MarkerRecord(
+                category,
+                name,
+                new BlockPos(marker.getInt("X"), 64, marker.getInt("Z")),
+                icon
+        );
+    }
+
+    @Nullable
+    private static ItemStack findAtlas(ServerPlayer player) {
+        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            if (isAtlas(stack)) return stack;
+        }
+        ItemStack offhand = player.getOffhandItem();
+        return isAtlas(offhand) ? offhand : null;
+    }
+
+    private static boolean isAtlas(ItemStack stack) {
+        return stack != null && !stack.isEmpty() && ATLAS_ID.equals(ForgeRegistries.ITEMS.getKey(stack.getItem()));
     }
 
     @Nullable
@@ -158,7 +267,7 @@ public final class AtlasDiscoveryMarkerService {
         return null;
     }
 
-    private static void removeCustomMarkersAt(MapItemSavedData data, BlockPos pos) {
+    private static void removeCustomMarkersNear(MapItemSavedData data, BlockPos pos, int radius) {
         try {
             Method getMarkers = data.getClass().getMethod("ml$getCustomMarkers");
             Object raw = getMarkers.invoke(data);
@@ -166,57 +275,38 @@ public final class AtlasDiscoveryMarkerService {
 
             Method remove = data.getClass().getMethod("ml$removeCustomMarker", String.class);
             Map<?, ?> copy = new HashMap<>(markers);
+            long radiusSq = (long) radius * radius;
             for (Map.Entry<?, ?> entry : copy.entrySet()) {
-                Object marker = entry.getValue();
-                if (!(entry.getKey() instanceof String markerId) || marker == null) continue;
+                Object custom = entry.getValue();
+                if (!(entry.getKey() instanceof String markerId) || custom == null) continue;
                 try {
-                    Object markerPos = marker.getClass().getMethod("getPos").invoke(marker);
-                    if (markerPos instanceof BlockPos blockPos && blockPos.getX() == pos.getX() && blockPos.getZ() == pos.getZ()) {
-                        remove.invoke(data, markerId);
+                    Object markerPos = custom.getClass().getMethod("getPos").invoke(custom);
+                    if (markerPos instanceof BlockPos blockPos) {
+                        long dx = blockPos.getX() - (long) pos.getX();
+                        long dz = blockPos.getZ() - (long) pos.getZ();
+                        if (dx * dx + dz * dz <= radiusSq) remove.invoke(data, markerId);
                     }
                 } catch (ReflectiveOperationException ignored) {
-                    // A foreign custom marker type can simply coexist; do not break the discovery.
+                    // Foreign marker type: leave it alone.
                 }
             }
         } catch (ReflectiveOperationException ignored) {
-            // Moonlight custom markers are optional. addMoonlightDecoration below remains authoritative.
+            // Atlas still receives the vanilla category marker even without Moonlight access.
         }
     }
 
-    private static void addMoonlightDecoration(ServerLevel level,
-                                               MapItemSavedData data,
-                                               BlockPos pos,
-                                               ResourceLocation markerId,
-                                               Component name) throws Exception {
-        Class<?> compat = Class.forName("pepjebs.mapatlases.integration.moonlight.MoonlightCompat");
-
-        // Map Atlases 1.20-6.0.20 (the pack version) exposes the four-argument method.
-        try {
-            Method method = compat.getMethod(
-                    "addDecoration",
-                    MapItemSavedData.class,
-                    BlockPos.class,
-                    ResourceLocation.class,
-                    Component.class
-            );
-            method.invoke(null, data, pos, markerId, name);
-            return;
-        } catch (NoSuchMethodException ignored) {
-            // Newer Map Atlases adds Level as the first parameter; keeping this makes upgrades cheap.
-        }
-
-        Method method = compat.getMethod(
-                "addDecoration",
-                Level.class,
-                MapItemSavedData.class,
-                BlockPos.class,
-                ResourceLocation.class,
-                Component.class
-        );
-        method.invoke(null, level, data, pos, markerId, name);
+    private static String decorationId(String discoveryKey) {
+        return "cozyzones_" + Integer.toUnsignedString(discoveryKey.hashCode(), 36);
     }
 
     private static byte clampScale(byte scale) {
         return (byte) Math.max(0, Math.min(4, scale));
     }
+
+    private record MarkerRecord(
+            DiscoveryCategory category,
+            String name,
+            BlockPos pos,
+            MapDecoration.Type icon
+    ) {}
 }
