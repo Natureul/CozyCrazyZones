@@ -1,0 +1,9 @@
+[visuals]
+# Keep the Farseer visual interaction enabled; only suppress the repeated login reminder.
+FARSEER_EFFECTS_ENABLED = true
+# Whether Farseer's effects reminder is enabled in login.
+EFFECTS_REMINDER_ENABLED = false
+# 0 = mod default, 1 = vanilla End, 2 = Better End.
+END_PORTAL_VARIANT = 0
+# 0 = mod default, 1 = vanilla Nether, 2 = Better Nether.
+NETHER_PORTAL_VARIANT = 0
