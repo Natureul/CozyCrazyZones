@@ -5,9 +5,9 @@ import net.minecraft.world.level.saveddata.maps.MapDecoration;
 
 /** Semantic categories for named places recorded on the player's Atlas. */
 public enum DiscoveryCategory {
-    VILLAGE("Settlement", MapDecoration.Type.PLAINS_VILLAGE),
+    VILLAGE("Settlement", MapDecoration.Type.BANNER_GREEN),
     DUNGEON("Dungeon", MapDecoration.Type.RED_X),
-    TEMPLE("Temple", MapDecoration.Type.JUNGLE_TEMPLE),
+    TEMPLE("Temple", MapDecoration.Type.MONUMENT),
     SHRINE("Shrine", MapDecoration.Type.BANNER_LIGHT_BLUE),
     RUIN("Ruin", MapDecoration.Type.TARGET_X),
     TOWER("Tower", MapDecoration.Type.MANSION),
