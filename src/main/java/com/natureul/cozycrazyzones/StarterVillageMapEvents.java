@@ -7,7 +7,7 @@ import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
-/** Server-side retry/lifecycle hooks for the personal starter Atlas + village guide. */
+/** Server-side retry/lifecycle hooks for personal starter Atlases and the shared desk guide map. */
 @Mod.EventBusSubscriber(modid = CozyCrazyZones.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class StarterVillageMapEvents {
     private StarterVillageMapEvents() {}
@@ -17,6 +17,7 @@ public final class StarterVillageMapEvents {
         if (event.getEntity() instanceof ServerPlayer player) {
             StarterAtlasService.ensureStarterAtlas(player);
             StarterVillageMapService.begin(player);
+            StarterDeskVillageMapService.begin(player);
         }
     }
 
@@ -24,6 +25,7 @@ public final class StarterVillageMapEvents {
     public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
         if (event.phase == TickEvent.Phase.END && event.player instanceof ServerPlayer player) {
             StarterVillageMapService.tick(player);
+            StarterDeskVillageMapService.tick(player);
         }
     }
 
@@ -31,11 +33,13 @@ public final class StarterVillageMapEvents {
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             StarterVillageMapService.remove(player);
+            StarterDeskVillageMapService.remove(player);
         }
     }
 
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
         StarterVillageMapService.clear();
+        StarterDeskVillageMapService.clear();
     }
 }
