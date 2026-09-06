@@ -52,6 +52,7 @@ public final class StructureNameSavedData extends SavedData {
 
     public String getOrAssign(StructureDiscoveryProfile profile,
                               MacroRegion region,
+                              RegionalInfluenceBand influenceBand,
                               long worldSeed,
                               ResourceLocation structureId,
                               ChunkPos start) {
@@ -60,7 +61,15 @@ public final class StructureNameSavedData extends SavedData {
         if (existing != null) return existing;
 
         for (int attempt = 0; attempt < MAX_CANDIDATES; attempt++) {
-            String candidate = StructurePlaceNameGenerator.candidate(profile, region, worldSeed, structureId, start, attempt);
+            String candidate = StructurePlaceNameGenerator.candidate(
+                    profile,
+                    region,
+                    influenceBand,
+                    worldSeed,
+                    structureId,
+                    start,
+                    attempt
+            );
             if (used.add(candidate)) {
                 names.put(key, candidate);
                 setDirty();
