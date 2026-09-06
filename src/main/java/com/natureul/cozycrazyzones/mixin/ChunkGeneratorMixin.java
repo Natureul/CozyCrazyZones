@@ -95,17 +95,18 @@ public abstract class ChunkGeneratorMixin {
     }
 
     /**
-     * A normal village placement candidate is reserved around ~1.15k blocks. If vanilla already
-     * generated a village there, leave it alone. If its native biome rejected all village starts,
-     * force a macro-appropriate vanilla village at that same locator-compatible candidate.
+     * Four normal village-placement candidates are reserved around the Hearthlands: one in each
+     * cardinal ecology. If vanilla already generated a village at a reserved candidate, leave it
+     * alone. If its native biome rejected all village starts, force a macro-appropriate vanilla
+     * village at that exact locator-compatible candidate.
      */
     @Inject(method = "createStructures", at = @At("TAIL"))
-    private void cozyzones$ensureFirstVillage(RegistryAccess registryAccess,
-                                               ChunkGeneratorStructureState structureState,
-                                               StructureManager structureManager,
-                                               ChunkAccess chunk,
-                                               StructureTemplateManager templateManager,
-                                               CallbackInfo ci) {
+    private void cozyzones$ensureHearthVillage(RegistryAccess registryAccess,
+                                                ChunkGeneratorStructureState structureState,
+                                                StructureManager structureManager,
+                                                ChunkAccess chunk,
+                                                StructureTemplateManager templateManager,
+                                                CallbackInfo ci) {
         if (!WorldGeographyContext.prepared() || WorldGeographyContext.provisionalAnchor()) return;
         if (!structureManager.shouldGenerateStructures()) return;
         if (!(((StructureManagerAccessor) structureManager).cozyzones$getLevelAccessor() instanceof net.minecraft.world.level.ServerLevelAccessor accessor)) return;
@@ -114,24 +115,31 @@ public abstract class ChunkGeneratorMixin {
         if (level.dimension() != Level.OVERWORLD) return;
 
         ChunkGenerator generator = (ChunkGenerator) (Object) this;
-        ChunkPos reserved = VillageRingPlanner.targetFor(level, generator, structureState, registryAccess);
-        if (reserved == null || !reserved.equals(chunk.getPos())) return;
+        MacroRegion reservedRegion = VillageRingPlanner.targetRegionFor(
+                level,
+                generator,
+                structureState,
+                registryAccess,
+                chunk.getPos()
+        );
+        if (reservedRegion == null) return;
 
+        ChunkPos reserved = chunk.getPos();
         Registry<Structure> structures = registryAccess.registryOrThrow(Registries.STRUCTURE);
         for (var existing : chunk.getAllStarts().entrySet()) {
             ResourceLocation existingId = structures.getKey(existing.getKey());
             if (existingId != null && cozyzones$isVanillaVillage(existingId)
                     && existing.getValue() != null && existing.getValue().isValid()) {
                 CozyCrazyZones.LOGGER.info(
-                        "Reserved first-village candidate {},{} already generated {} normally",
-                        reserved.x, reserved.z, existingId
+                        "Reserved {} village candidate {},{} already generated {} normally",
+                        reservedRegion.displayName(), reserved.x, reserved.z, existingId
                 );
                 return;
             }
         }
 
         RegionalCell cell = WorldGeographyContext.cellAt(reserved.getMiddleBlockX(), reserved.getMiddleBlockZ());
-        for (ResourceLocation preferredId : cozyzones$preferredVillageOrder(cell.macroRegion())) {
+        for (ResourceLocation preferredId : cozyzones$preferredVillageOrder(reservedRegion)) {
             Structure structure = structures.get(preferredId);
             if (structure == null) continue;
 
@@ -151,19 +159,19 @@ public abstract class ChunkGeneratorMixin {
 
             structureManager.setStartForStructure(SectionPos.bottomOf(chunk), structure, start, chunk);
             CozyCrazyZones.LOGGER.info(
-                    "Guaranteed first village {} at chunk {},{} ({} / {} blocks from spawn)",
+                    "Guaranteed {} Hearthlands village {} at chunk {},{} ({} blocks from spawn)",
+                    reservedRegion.displayName(),
                     preferredId,
                     reserved.x,
                     reserved.z,
-                    cell.macroRegion().displayName(),
                     Math.round(cell.distanceFromSpawn())
             );
             return;
         }
 
         CozyCrazyZones.LOGGER.warn(
-                "Reserved first-village candidate {},{} was reached, but every forced vanilla village variant returned an invalid start",
-                reserved.x, reserved.z
+                "Reserved {} village candidate {},{} was reached, but every forced vanilla village variant returned an invalid start",
+                reservedRegion.displayName(), reserved.x, reserved.z
         );
     }
 
