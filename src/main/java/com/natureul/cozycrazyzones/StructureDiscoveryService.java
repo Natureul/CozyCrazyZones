@@ -13,7 +13,9 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
+import net.minecraft.world.level.saveddata.maps.MapDecoration;
 
+import javax.annotation.Nullable;
 import java.util.Map;
 
 /**
@@ -41,7 +43,11 @@ public final class StructureDiscoveryService {
             ResourceLocation structureId = registry.getKey(structure);
             if (structureId == null) continue;
 
-            StructureDiscoveryProfile profile = StructureDiscoveryProfile.classify(registry, structure, structureId);
+            // The runtime dump is the authority here. A few 1.20.1 registry ids differ from their
+            // common names/documentation (notably minecraft:mansion and minecraft:monument), so
+            // resolve those exact pack ids before the broader semantic classifier.
+            StructureDiscoveryProfile profile = runtimeOverride(structureId);
+            if (profile == null) profile = StructureDiscoveryProfile.classify(registry, structure, structureId);
             if (profile == null) continue;
 
             StructureStart start = level.structureManager().getStructureAt(player.blockPosition(), structure);
@@ -54,6 +60,31 @@ public final class StructureDiscoveryService {
     public static void copyPersistentState(ServerPlayer original, ServerPlayer replacement) {
         CompoundTag old = original.getPersistentData().getCompound(DISCOVERED_TAG);
         if (!old.isEmpty()) replacement.getPersistentData().put(DISCOVERED_TAG, old.copy());
+    }
+
+    @Nullable
+    private static StructureDiscoveryProfile runtimeOverride(ResourceLocation id) {
+        return switch (id.toString()) {
+            case "minecraft:mansion" -> new StructureDiscoveryProfile(
+                    DiscoveryCategory.FORTRESS, "Woodland Mansion", MapDecoration.Type.MANSION, true
+            );
+            case "minecraft:monument" -> new StructureDiscoveryProfile(
+                    DiscoveryCategory.TEMPLE, "Ocean Monument", MapDecoration.Type.MONUMENT, true
+            );
+            case "dungeons_enhanced:black_citadel" -> new StructureDiscoveryProfile(
+                    DiscoveryCategory.FORTRESS, "Black Citadel", MapDecoration.Type.BANNER_BLACK, true
+            );
+            case "valhelsia_structures:deep_spawner_room" -> new StructureDiscoveryProfile(
+                    DiscoveryCategory.DUNGEON, "Deep Spawner Room", MapDecoration.Type.RED_X, true
+            );
+            case "valhelsia_structures:spawner_dungeon" -> new StructureDiscoveryProfile(
+                    DiscoveryCategory.DUNGEON, "Spawner Dungeon", MapDecoration.Type.RED_X, false
+            );
+            case "valhelsia_structures:spawner_room" -> new StructureDiscoveryProfile(
+                    DiscoveryCategory.DUNGEON, "Spawner Room", MapDecoration.Type.RED_X, false
+            );
+            default -> null;
+        };
     }
 
     private static void discover(ServerPlayer player,
