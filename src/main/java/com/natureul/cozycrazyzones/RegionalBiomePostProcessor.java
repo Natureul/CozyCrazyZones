@@ -10,6 +10,7 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -17,11 +18,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Regionalizes the already-completed BIOMES-stage chunk palette.
  *
- * TerraBlender/Tectonic are allowed to decide the native large-scale terrain first. CozyCrazyZones
- * then changes biome identity where progression geography calls for it, but it no longer turns ocean
- * density into artificial land. That distinction matters: biome identity is safe to post-process;
- * terrain density is not. The starter area is kept land-rich by selecting a better shared spawn,
- * rather than by filling seas after generation.
+ * This is the authoritative biome-writing stage. TerraBlender/Tectonic decide the native terrain
+ * and native biome palette first; CozyCrazyZones then applies the final regional identity contract
+ * to that completed palette. Terrain density is intentionally left untouched.
  */
 public final class RegionalBiomePostProcessor {
     private static final ResourceLocation ASPEN_GLADE = id("biomesoplenty:aspen_glade");
@@ -33,6 +32,7 @@ public final class RegionalBiomePostProcessor {
 
     private static final AtomicBoolean FIRST_REMAP_LOGGED = new AtomicBoolean();
     private static final AtomicBoolean FIRST_MISSING_TARGET_LOGGED = new AtomicBoolean();
+    private static final AtomicBoolean FIRST_FALLBACK_TARGET_LOGGED = new AtomicBoolean();
 
     private RegionalBiomePostProcessor() {}
 
@@ -63,6 +63,7 @@ public final class RegionalBiomePostProcessor {
             int blockX = QuartPos.toBlock(quartX);
             int blockZ = QuartPos.toBlock(quartZ);
             RegionalCell cell = WorldGeographyContext.cellAt(blockX, blockZ);
+
             ResourceLocation targetId = remap(originalId, cell, blockX, blockZ);
             targetId = RegionalPaletteRefinement.refine(
                     targetId,
@@ -72,13 +73,45 @@ public final class RegionalBiomePostProcessor {
                     blockX,
                     blockZ
             );
+
+            // IMPORTANT: this stricter COMMON-biome pass must happen here, after the native chunk
+            // palette exists. The earlier MultiNoise hook is useful for structure-time biome reads,
+            // but this completed-palette stage is what the player actually sees in generated chunks.
+            targetId = RegionalBiomeStrictness.refine(
+                    targetId,
+                    originalId,
+                    cell,
+                    WorldGeographyContext.worldSeed(),
+                    blockX,
+                    blockZ
+            );
+
+            // Aquamirae's Maze is biome/feature-driven. The final palette, not merely an earlier
+            // biome-source answer, must therefore enforce the finite northern Dread expedition belt.
+            targetId = reserveIceMazeForFinalBelt(originalId, targetId, cell);
+
             if (targetId.equals(originalId)) return original;
 
             Holder<Biome> replacement = lookup.get(targetId);
+            if (replacement == null && !BiomeRegionality.isOcean(targetId) && !BiomeRegionality.isRiver(targetId)) {
+                ResourceLocation requested = targetId;
+                ResourceLocation fallbackId = firstAvailableRegionalFallback(cell, lookup);
+                if (fallbackId != null) {
+                    replacement = lookup.get(fallbackId);
+                    targetId = fallbackId;
+                    if (FIRST_FALLBACK_TARGET_LOGGED.compareAndSet(false, true)) {
+                        CozyCrazyZones.LOGGER.warn(
+                                "Final regional palette target {} was unavailable at {},{}; using {} instead of leaking original biome {}",
+                                requested, blockX, blockZ, fallbackId, originalId
+                        );
+                    }
+                }
+            }
+
             if (replacement == null) {
                 if (FIRST_MISSING_TARGET_LOGGED.compareAndSet(false, true)) {
                     CozyCrazyZones.LOGGER.warn(
-                            "Regional palette wanted {} -> {} at {},{} but the target is absent from this biome source",
+                            "Final regional palette wanted {} -> {} at {},{} but neither the target nor a safe regional fallback is available in this biome source",
                             originalId, targetId, blockX, blockZ
                     );
                 }
@@ -127,6 +160,7 @@ public final class RegionalBiomePostProcessor {
         }
         FIRST_REMAP_LOGGED.set(false);
         FIRST_MISSING_TARGET_LOGGED.set(false);
+        FIRST_FALLBACK_TARGET_LOGGED.set(false);
     }
 
     private static ResourceLocation remap(ResourceLocation original,
@@ -136,9 +170,7 @@ public final class RegionalBiomePostProcessor {
         if (ASPEN_GLADE.equals(original)) return remapAspen(cell, blockX, blockZ);
         if (MOOR.equals(original)) return remapMoor(cell);
 
-        // Water stays water. This is the central correction from the experimental land-shaping
-        // builds: a native Tectonic ocean may be recolored for regional temperature, but never
-        // silently converted to a grass biome while its density still describes an ocean basin.
+        // Water stays water. Native Tectonic ocean density is never silently converted into land.
         if (BiomeRegionality.isOcean(original) && cell.radialZone() == Region.HEARTHLANDS) {
             return hearthlandsOcean(cell.macroRegion(), original);
         }
@@ -151,19 +183,29 @@ public final class RegionalBiomePostProcessor {
                 blockZ
         );
 
-        // Aquamirae's Ice Maze tags frozen/deep-frozen ocean. Keep the northern sea merely cold
-        // through Frontier/Wildlands; frozen ocean is reserved for Frostmarch Dread Reaches.
-        if (BiomeRegionality.isOcean(original) && cell.macroRegion() == MacroRegion.NORTH) {
-            boolean deep = original.getPath().startsWith("deep_");
-            if (cell.radialZone() == Region.DREAD_REACHES) {
-                return id(deep ? "minecraft:deep_frozen_ocean" : "minecraft:frozen_ocean");
-            }
-            if (target.getPath().equals("frozen_ocean") || target.getPath().equals("deep_frozen_ocean")) {
-                return id(deep ? "minecraft:deep_cold_ocean" : "minecraft:cold_ocean");
-            }
+        return enrichRegionalTexture(target, original, cell, blockX, blockZ);
+    }
+
+    /**
+     * Aquamirae's Ice Maze uses frozen/deep-frozen ocean as its biome territory. That territory is
+     * legal only in established northern Dread Reaches and only until finalDestinationMaxRadius.
+     * Outside the legal belt, frozen-ocean leakage becomes the region's non-Maze ocean analogue.
+     */
+    private static ResourceLocation reserveIceMazeForFinalBelt(ResourceLocation original,
+                                                                ResourceLocation target,
+                                                                RegionalCell cell) {
+        if (!BiomeRegionality.isOcean(target)) return target;
+
+        boolean deep = target.getPath().startsWith("deep_") || original.getPath().startsWith("deep_");
+        if (FinalDestinationPolicy.iceMazeTerritory(cell)) {
+            return id(deep ? "minecraft:deep_frozen_ocean" : "minecraft:frozen_ocean");
         }
 
-        return enrichRegionalTexture(target, original, cell, blockX, blockZ);
+        if (FinalDestinationPolicy.isIceMazeOcean(target)
+                || FinalDestinationPolicy.isIceMazeOcean(original)) {
+            return FinalDestinationPolicy.nonMazeOcean(cell, deep);
+        }
+        return target;
     }
 
     /**
@@ -194,8 +236,6 @@ public final class RegionalBiomePostProcessor {
         );
 
         if (cell.radialZone() == Region.HEARTHLANDS) {
-            // Hearthlands stays hospitable: grassland/savanna country with occasional scrub or a
-            // lusher belt. Dryland is deliberately rare this close to home.
             if (profile.shape() == BiomeRegionality.Shape.OPEN
                     || profile.shape() == BiomeRegionality.Shape.ARID) {
                 if (broad > 0.42D) return id("biomesoplenty:lush_savanna");
@@ -265,6 +305,30 @@ public final class RegionalBiomePostProcessor {
             case EAST, SOUTH -> id(deep ? "minecraft:deep_lukewarm_ocean" : "minecraft:lukewarm_ocean");
             case WEST -> id(deep ? "minecraft:deep_ocean" : "minecraft:ocean");
         };
+    }
+
+    private static ResourceLocation firstAvailableRegionalFallback(RegionalCell cell,
+                                                                    Map<ResourceLocation, Holder<Biome>> lookup) {
+        boolean deep = cell.radialZone().atLeast(Region.WILDLANDS);
+        List<ResourceLocation> candidates = switch (cell.macroRegion()) {
+            case NORTH -> deep
+                    ? List.of(id("minecraft:snowy_taiga"), id("minecraft:snowy_plains"), id("minecraft:taiga"))
+                    : List.of(id("minecraft:taiga"), id("minecraft:snowy_taiga"), id("minecraft:meadow"));
+            case EAST -> deep
+                    ? List.of(id("minecraft:jungle"), id("minecraft:bamboo_jungle"), id("minecraft:sparse_jungle"), id("minecraft:mangrove_swamp"))
+                    : List.of(id("minecraft:sparse_jungle"), id("biomesoplenty:overgrown_greens"), id("minecraft:jungle"), id("minecraft:swamp"));
+            case SOUTH -> deep
+                    ? List.of(id("minecraft:desert"), id("minecraft:badlands"), id("minecraft:savanna"))
+                    : List.of(id("minecraft:savanna"), id("biomesoplenty:dryland"), id("minecraft:desert"));
+            case WEST -> deep
+                    ? List.of(id("biomesoplenty:old_growth_woodland"), id("biomesoplenty:redwood_forest"), id("minecraft:dark_forest"), id("minecraft:taiga"))
+                    : List.of(id("biomesoplenty:seasonal_forest"), id("biomesoplenty:maple_woods"), id("minecraft:dark_forest"), id("minecraft:taiga"));
+        };
+
+        for (ResourceLocation candidate : candidates) {
+            if (lookup.containsKey(candidate)) return candidate;
+        }
+        return null;
     }
 
     private static Map<ResourceLocation, Holder<Biome>> lookupFor(BiomeSource source) {
