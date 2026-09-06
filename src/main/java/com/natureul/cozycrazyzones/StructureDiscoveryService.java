@@ -18,13 +18,7 @@ import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import javax.annotation.Nullable;
 import java.util.Map;
 
-/**
- * Cheap loaded-position-only named-place discovery.
- *
- * Once per second we ask Minecraft which already-generated structures contain the player's current
- * block. There are no radius scans and no locate calls. The resulting place name is world-persistent;
- * player discovery state and Atlas markers remain per-player.
- */
+/** Cheap loaded-position-only named-place discovery. */
 public final class StructureDiscoveryService {
     private static final String DISCOVERED_TAG = "cozycrazyzones:discovered_structures";
 
@@ -43,9 +37,6 @@ public final class StructureDiscoveryService {
             ResourceLocation structureId = registry.getKey(structure);
             if (structureId == null) continue;
 
-            // The runtime dump is the authority here. A few 1.20.1 registry ids differ from their
-            // common names/documentation (notably minecraft:mansion and minecraft:monument), so
-            // resolve those exact pack ids before the broader semantic classifier.
             StructureDiscoveryProfile profile = runtimeOverride(structureId);
             if (profile == null) profile = StructureDiscoveryProfile.classify(registry, structure, structureId);
             if (profile == null) continue;
@@ -65,24 +56,12 @@ public final class StructureDiscoveryService {
     @Nullable
     private static StructureDiscoveryProfile runtimeOverride(ResourceLocation id) {
         return switch (id.toString()) {
-            case "minecraft:mansion" -> new StructureDiscoveryProfile(
-                    DiscoveryCategory.FORTRESS, "Woodland Mansion", MapDecoration.Type.MANSION, true
-            );
-            case "minecraft:monument" -> new StructureDiscoveryProfile(
-                    DiscoveryCategory.TEMPLE, "Ocean Monument", MapDecoration.Type.MONUMENT, true
-            );
-            case "dungeons_enhanced:black_citadel" -> new StructureDiscoveryProfile(
-                    DiscoveryCategory.FORTRESS, "Black Citadel", MapDecoration.Type.BANNER_BLACK, true
-            );
-            case "valhelsia_structures:deep_spawner_room" -> new StructureDiscoveryProfile(
-                    DiscoveryCategory.DUNGEON, "Deep Spawner Room", MapDecoration.Type.RED_X, true
-            );
-            case "valhelsia_structures:spawner_dungeon" -> new StructureDiscoveryProfile(
-                    DiscoveryCategory.DUNGEON, "Spawner Dungeon", MapDecoration.Type.RED_X, false
-            );
-            case "valhelsia_structures:spawner_room" -> new StructureDiscoveryProfile(
-                    DiscoveryCategory.DUNGEON, "Spawner Room", MapDecoration.Type.RED_X, false
-            );
+            case "minecraft:mansion" -> new StructureDiscoveryProfile(DiscoveryCategory.FORTRESS, "Woodland Mansion", MapDecoration.Type.MANSION, true);
+            case "minecraft:monument" -> new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, "Ocean Monument", MapDecoration.Type.MONUMENT, true);
+            case "dungeons_enhanced:black_citadel" -> new StructureDiscoveryProfile(DiscoveryCategory.FORTRESS, "Black Citadel", MapDecoration.Type.BANNER_BLACK, true);
+            case "valhelsia_structures:deep_spawner_room" -> new StructureDiscoveryProfile(DiscoveryCategory.DUNGEON, "Deep Spawner Room", MapDecoration.Type.RED_X, true);
+            case "valhelsia_structures:spawner_dungeon" -> new StructureDiscoveryProfile(DiscoveryCategory.DUNGEON, "Spawner Dungeon", MapDecoration.Type.RED_X, false);
+            case "valhelsia_structures:spawner_room" -> new StructureDiscoveryProfile(DiscoveryCategory.DUNGEON, "Spawner Room", MapDecoration.Type.RED_X, false);
             default -> null;
         };
     }
@@ -101,39 +80,32 @@ public final class StructureDiscoveryService {
         int x = (box.minX() + box.maxX()) / 2;
         int z = (box.minZ() + box.maxZ()) / 2;
         BlockPos marker = new BlockPos(x, player.blockPosition().getY(), z);
-        MacroRegion region = CozyZonesApi.regionalCellAt(level, x, z).macroRegion();
+        RegionalCell cell = CozyZonesApi.regionalCellAt(level, x, z);
+        MacroRegion region = cell.macroRegion();
 
         String name = profile.category() == DiscoveryCategory.VILLAGE
                 ? VillageNameSavedData.get(level).getOrAssign(region, level.getSeed(), startChunk)
-                : StructureNameSavedData.get(level).getOrAssign(profile, region, level.getSeed(), structureId, startChunk);
+                : StructureNameSavedData.get(level).getOrAssign(profile, cell, level.getSeed(), structureId, startChunk);
+        MapDecoration.Type icon = RegionalMapSymbolPolicy.iconFor(profile, region);
 
         CompoundTag discovered = player.getPersistentData().getCompound(DISCOVERED_TAG);
         if (discovered.getBoolean(discoveryKey)) {
-            // v0.3.17 knew only village booleans + a Moonlight pin. Re-entering an old discovery
-            // silently upgrades it into the permanent named/category marker ledger without replaying
-            // the announcement or stinger.
             if (!AtlasDiscoveryMarkerService.hasKnownMarker(player, discoveryKey)) {
-                AtlasDiscoveryMarkerService.enqueue(
-                        player,
-                        discoveryKey,
-                        profile.category(),
-                        name,
-                        marker,
-                        profile.icon()
-                );
+                AtlasDiscoveryMarkerService.enqueue(player, discoveryKey, profile.category(), name, marker, icon);
             }
             return;
         }
 
-        // Commit discovery before presentation. A third-party Atlas error can never cause repeated
-        // title/audio spam while the player walks around inside a large structure.
         discovered.putBoolean(discoveryKey, true);
         player.getPersistentData().put(DISCOVERED_TAG, discovered);
 
+        String regionSuffix = HearthlandsNeutralNames.shouldUseNeutralName(cell)
+                ? " · Inner Hearthlands"
+                : " · " + region.displayName();
         player.displayClientMessage(
                 Component.literal("✦ " + profile.kind() + " discovered: ")
                         .append(Component.literal(name).withStyle(region.formatting()))
-                        .append(Component.literal(" · " + region.displayName())),
+                        .append(Component.literal(regionSuffix)),
                 true
         );
 
@@ -143,24 +115,13 @@ public final class StructureDiscoveryService {
             StingerService.queueDiscovery(player, profile.category(), region, profile.major());
         }
 
-        AtlasDiscoveryMarkerService.enqueue(
-                player,
-                discoveryKey,
-                profile.category(),
-                name,
-                marker,
-                profile.icon()
-        );
+        AtlasDiscoveryMarkerService.enqueue(player, discoveryKey, profile.category(), name, marker, icon);
 
         CozyCrazyZones.LOGGER.info(
                 "{} discovered {} '{}' [{}] at start chunk {},{} ({})",
-                player.getGameProfile().getName(),
-                profile.kind(),
-                name,
-                structureId,
-                startChunk.x,
-                startChunk.z,
-                region.displayName()
+                player.getGameProfile().getName(), profile.kind(), name, structureId,
+                startChunk.x, startChunk.z,
+                HearthlandsNeutralNames.shouldUseNeutralName(cell) ? "Inner Hearthlands" : region.displayName()
         );
     }
 }
