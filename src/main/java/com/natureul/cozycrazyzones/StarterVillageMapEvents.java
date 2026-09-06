@@ -17,10 +17,11 @@ public final class StarterVillageMapEvents {
         if (event.getEntity() instanceof ServerPlayer player) {
             // Grant the personal Atlas first, then claim/convert the decorative desk frame into the
             // real filled Hearthlands map before Atlas routing looks for legacy frame-held Atlases.
-            // This keeps the two navigation surfaces unambiguously separate.
+            // Finally reserve those same four printed names in the world-global discovery ledger.
             StarterAtlasService.ensureStarterAtlas(player);
             StarterDeskVillageMapService.begin(player);
             StarterVillageMapService.begin(player);
+            VillageNameBootstrapService.begin(player);
         }
     }
 
@@ -31,6 +32,7 @@ public final class StarterVillageMapEvents {
             // frame is still converted before the exact-route service can mistake it for the player Atlas.
             StarterDeskVillageMapService.tick(player);
             StarterVillageMapService.tick(player);
+            VillageNameBootstrapService.tick(player);
         }
     }
 
@@ -39,6 +41,7 @@ public final class StarterVillageMapEvents {
         if (event.getEntity() instanceof ServerPlayer player) {
             StarterVillageMapService.remove(player);
             StarterDeskVillageMapService.remove(player);
+            VillageNameBootstrapService.remove(player);
         }
     }
 
@@ -46,5 +49,6 @@ public final class StarterVillageMapEvents {
     public static void onServerStopped(ServerStoppedEvent event) {
         StarterVillageMapService.clear();
         StarterDeskVillageMapService.clear();
+        VillageNameBootstrapService.clear();
     }
 }
