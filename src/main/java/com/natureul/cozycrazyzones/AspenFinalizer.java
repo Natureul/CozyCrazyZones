@@ -12,12 +12,12 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Last-line Aspen Glade guard at the actual chunk palette.
+ * Last-line surface-biome guard at the actual chunk palette.
  *
- * Aspen is never legal anywhere in the Hearthlands. Outside the Hearthlands it is a Harvestwood
- * biome and is legal only in established WEST country. Source-level guards should already enforce
- * this; the finalizer remains as defense in depth against another worldgen path writing Aspen into
- * the completed chunk palette.
+ * Aspen is never legal anywhere in the Hearthlands. The same final pass also prevents enormous
+ * bare BOP grassland/prairie/shrubland belts from surviving in the immediate shared Hearthlands.
+ * Source-level guards should already enforce both contracts; this remains defense in depth against
+ * another worldgen path writing an unwanted biome into the completed chunk palette.
  */
 public final class AspenFinalizer {
     private static final ResourceLocation ASPEN = id("biomesoplenty:aspen_glade");
@@ -25,7 +25,7 @@ public final class AspenFinalizer {
     private AspenFinalizer() {}
 
     public static void sanitize(ChunkAccess chunk, BiomeSource source, Climate.Sampler sampler) {
-        if (!WorldGeographyContext.prepared() || !surfaceContainsAspen(chunk)) return;
+        if (!WorldGeographyContext.prepared() || !surfaceNeedsSanitizing(chunk)) return;
 
         Map<ResourceLocation, Holder<Biome>> lookup = new HashMap<>();
         for (Holder<Biome> holder : source.possibleBiomes()) {
@@ -35,11 +35,33 @@ public final class AspenFinalizer {
         chunk.fillBiomesFromNoise((quartX, quartY, quartZ, ignored) -> {
             Holder<Biome> original = rawNoiseBiome(chunk, quartX, quartY, quartZ);
             ResourceLocation originalId = original.unwrapKey().map(key -> key.location()).orElse(null);
-            if (!ASPEN.equals(originalId) || QuartPos.toBlock(quartY) < 48) return original;
+            if (originalId == null || QuartPos.toBlock(quartY) < 48) return original;
 
             int blockX = QuartPos.toBlock(quartX);
             int blockZ = QuartPos.toBlock(quartZ);
             RegionalCell cell = WorldGeographyContext.cellAt(blockX, blockZ);
+
+            ResourceLocation coreTarget = SharedCoreBiomePolicy.temper(
+                    originalId,
+                    cell,
+                    WorldGeographyContext.worldSeed(),
+                    blockX,
+                    blockZ
+            );
+            if (!coreTarget.equals(originalId)) {
+                ResourceLocation available = firstAvailable(
+                        lookup,
+                        coreTarget,
+                        id("minecraft:plains"),
+                        id("minecraft:forest"),
+                        id("minecraft:birch_forest"),
+                        id("minecraft:meadow")
+                );
+                if (available != null) return lookup.getOrDefault(available, original);
+            }
+
+            if (!ASPEN.equals(originalId)) return original;
+
             boolean legal = !WorldGeographyContext.provisionalAnchor()
                     && cell.radialZone() != Region.HEARTHLANDS
                     && cell.macroRegion() == MacroRegion.WEST
@@ -74,18 +96,26 @@ public final class AspenFinalizer {
         }, sampler);
     }
 
-    private static boolean surfaceContainsAspen(ChunkAccess chunk) {
+    private static boolean surfaceNeedsSanitizing(ChunkAccess chunk) {
         int quartY = QuartPos.fromBlock(80);
         int minQuartY = QuartPos.fromBlock(chunk.getMinBuildHeight());
         int maxQuartY = minQuartY + QuartPos.fromBlock(chunk.getHeight()) - 1;
         int clampedQuartY = Math.max(minQuartY, Math.min(maxQuartY, quartY));
         int blockY = QuartPos.toBlock(clampedQuartY);
         int sectionIndex = chunk.getSectionIndex(blockY);
+        int minBlockX = chunk.getPos().getMinBlockX();
+        int minBlockZ = chunk.getPos().getMinBlockZ();
+
         for (int localX = 0; localX < 4; localX++) {
             for (int localZ = 0; localZ < 4; localZ++) {
                 Holder<Biome> holder = chunk.getSection(sectionIndex).getNoiseBiome(localX, clampedQuartY & 3, localZ);
-                ResourceLocation id = holder.unwrapKey().map(key -> key.location()).orElse(null);
-                if (ASPEN.equals(id)) return true;
+                ResourceLocation biomeId = holder.unwrapKey().map(key -> key.location()).orElse(null);
+                if (ASPEN.equals(biomeId)) return true;
+
+                int blockX = minBlockX + localX * 4;
+                int blockZ = minBlockZ + localZ * 4;
+                RegionalCell cell = WorldGeographyContext.cellAt(blockX, blockZ);
+                if (SharedCoreBiomePolicy.shouldTemper(biomeId, cell)) return true;
             }
         }
         return false;
