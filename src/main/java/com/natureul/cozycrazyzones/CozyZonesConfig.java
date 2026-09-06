@@ -14,6 +14,7 @@ public final class CozyZonesConfig {
     public static final ForgeConfigSpec.IntValue FRONTIER_RADIUS;
     public static final ForgeConfigSpec.IntValue WILDLANDS_RADIUS;
     public static final ForgeConfigSpec.IntValue DREAD_RADIUS;
+    public static final ForgeConfigSpec.IntValue FINAL_DESTINATION_MAX_RADIUS;
     public static final ForgeConfigSpec.IntValue HYSTERESIS;
     public static final ForgeConfigSpec.IntValue ANNOUNCEMENT_COOLDOWN;
     public static final ForgeConfigSpec.EnumValue<HudMode> HUD_MODE;
@@ -30,11 +31,17 @@ public final class CozyZonesConfig {
                 "Between innerCoreRadius and this value is the organic cardinal transition band."
         ).defineInRange("cardinalEstablishedRadius", 1200, 1, 20000);
         MACRO_BORDER_BLEND_DEGREES = common.comment(
-                "Angular half-width used by future biome/ecology rules to soften warped borders between cardinal macro-regions."
-        ).defineInRange("macroBorderBlendDegrees", 11.0D, 1.0D, 30.0D);
+                "Angular half-width used to soften warped borders between cardinal macro-regions.",
+                "Default 8 degrees keeps borders organic without allowing broad generic-biome corridors."
+        ).defineInRange("macroBorderBlendDegrees", 8.0D, 1.0D, 30.0D);
         FRONTIER_RADIUS = common.comment("Hearthlands ends at this horizontal distance from actual Overworld spawn.").defineInRange("frontierRadius", 2500, 256, 100000);
         WILDLANDS_RADIUS = common.defineInRange("wildlandsRadius", 5500, 512, 200000);
         DREAD_RADIUS = common.defineInRange("dreadRadius", 9000, 1024, 500000);
+        FINAL_DESTINATION_MAX_RADIUS = common.comment(
+                "Outer edge of the finite Dread expedition belt used by regional final destinations.",
+                "Cursed Pyramid and Aquamirae Ice-Maze content are rejected beyond this radius.",
+                "Default 15000 prevents a first valid final destination from drifting tens of thousands of blocks away."
+        ).defineInRange("finalDestinationMaxRadius", 15000, 2048, 500000);
         HYSTERESIS = common.comment("Boundary padding used to prevent rapid title/HUD ping-pong.").defineInRange("boundaryHysteresis", 48, 0, 512);
         ANNOUNCEMENT_COOLDOWN = common.comment("Minimum ticks between full region-entry announcements.").defineInRange("announcementCooldownTicks", 200, 0, 2400);
         common.pop();
@@ -60,6 +67,17 @@ public final class CozyZonesConfig {
         int core = effectiveInnerCoreRadius();
         int frontier = FRONTIER_RADIUS.get();
         return Math.max(core + 1, Math.min(CARDINAL_ESTABLISHED_RADIUS.get(), Math.max(core + 1, frontier - 1)));
+    }
+
+    public static int effectiveDreadRadius() {
+        int frontier = FRONTIER_RADIUS.get();
+        int wildlands = Math.max(frontier + 1, WILDLANDS_RADIUS.get());
+        return Math.max(wildlands + 1, DREAD_RADIUS.get());
+    }
+
+    public static int effectiveFinalDestinationMaxRadius() {
+        // Always leave at least a modest legal final-destination band if someone tunes Dread outward.
+        return Math.max(effectiveDreadRadius() + 1024, FINAL_DESTINATION_MAX_RADIUS.get());
     }
 
     private CozyZonesConfig() {}

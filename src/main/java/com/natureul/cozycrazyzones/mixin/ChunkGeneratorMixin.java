@@ -2,8 +2,8 @@ package com.natureul.cozycrazyzones.mixin;
 
 import com.natureul.cozycrazyzones.CozyCrazyZones;
 import com.natureul.cozycrazyzones.CozyZonesApi;
+import com.natureul.cozycrazyzones.FinalDestinationPolicy;
 import com.natureul.cozycrazyzones.MacroRegion;
-import com.natureul.cozycrazyzones.Region;
 import com.natureul.cozycrazyzones.RegionalCell;
 import com.natureul.cozycrazyzones.VillageRingPlanner;
 import com.natureul.cozycrazyzones.WorldGeographyContext;
@@ -32,18 +32,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.List;
-import java.util.Set;
 
 @Mixin(ChunkGenerator.class)
 public abstract class ChunkGeneratorMixin {
-    private static final Set<ResourceLocation> COZYZONES$AQUAMIRAE_DREAD_STRUCTURES = Set.of(
-            new ResourceLocation("aquamirae", "outpost"),
-            new ResourceLocation("aquamirae", "shelter"),
-            new ResourceLocation("aquamirae", "ship"),
-            new ResourceLocation("aquamirae", "surface/arch"),
-            new ResourceLocation("aquamirae", "surface/spiral")
-    );
-
     private static final ResourceLocation COZYZONES$VILLAGE_PLAINS = new ResourceLocation("minecraft", "village_plains");
     private static final ResourceLocation COZYZONES$VILLAGE_SAVANNA = new ResourceLocation("minecraft", "village_savanna");
     private static final ResourceLocation COZYZONES$VILLAGE_SNOWY = new ResourceLocation("minecraft", "village_snowy");
@@ -89,12 +80,12 @@ public abstract class ChunkGeneratorMixin {
             }
         }
 
-        // Aquamirae's registered Ice-Maze surface structures are endgame Frostmarch content.
-        // Keep this independent of biome remapping so another biome modifier cannot leak one into
-        // the Hearthlands or another macro-region.
-        if (COZYZONES$AQUAMIRAE_DREAD_STRUCTURES.contains(id)) {
+        // Regional finals require both halves of the geography contract: the correct cardinal Dread
+        // region AND a finite outer expedition limit. This prevents the first valid Cursed Pyramid
+        // or Aquamirae structure from drifting to 20k-30k+ blocks simply because Dread is unbounded.
+        if (FinalDestinationPolicy.isFinalStructure(id)) {
             RegionalCell cell = CozyZonesApi.regionalCellAt(level, x, z);
-            if (cell.radialZone() != Region.DREAD_REACHES || cell.macroRegion() != MacroRegion.NORTH) {
+            if (!FinalDestinationPolicy.allowsStructure(id, cell)) {
                 cir.setReturnValue(false);
                 return;
             }
