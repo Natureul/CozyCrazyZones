@@ -12,10 +12,7 @@ import java.util.Map;
 
 /**
  * Curates which generated structures deserve a named place on the Atlas.
- *
- * This intentionally does not label every registry object. Tiny treasure structures and technical
- * worldgen helpers would turn the Atlas into noise; this layer focuses on places a player can
- * reasonably think of as destinations.
+ * Tiny treasure structures and technical worldgen helpers are intentionally excluded.
  */
 public record StructureDiscoveryProfile(
         DiscoveryCategory category,
@@ -32,13 +29,13 @@ public record StructureDiscoveryProfile(
 
             Map.entry("minecraft:woodland_mansion", new StructureDiscoveryProfile(DiscoveryCategory.FORTRESS, "Woodland Mansion", MapDecoration.Type.MANSION, true)),
             Map.entry("minecraft:ocean_monument", new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, "Ocean Monument", MapDecoration.Type.MONUMENT, true)),
-            Map.entry("minecraft:jungle_pyramid", new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, "Jungle Temple", MapDecoration.Type.JUNGLE_TEMPLE, true)),
-            Map.entry("minecraft:swamp_hut", new StructureDiscoveryProfile(DiscoveryCategory.HOUSE, "Witch Hut", MapDecoration.Type.SWAMP_HUT, false)),
+            Map.entry("minecraft:jungle_pyramid", new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, "Jungle Temple", MapDecoration.Type.MONUMENT, true)),
+            Map.entry("minecraft:swamp_hut", new StructureDiscoveryProfile(DiscoveryCategory.HOUSE, "Witch Hut", MapDecoration.Type.BANNER_PURPLE, false)),
             Map.entry("minecraft:ancient_city", new StructureDiscoveryProfile(DiscoveryCategory.LANDMARK, "Ancient City", MapDecoration.Type.BLUE_MARKER, true)),
             Map.entry("minecraft:stronghold", new StructureDiscoveryProfile(DiscoveryCategory.FORTRESS, "Stronghold", MapDecoration.Type.BANNER_BLACK, true)),
             Map.entry("minecraft:pillager_outpost", new StructureDiscoveryProfile(DiscoveryCategory.TOWER, "Pillager Outpost", MapDecoration.Type.MANSION, true)),
             Map.entry("minecraft:desert_pyramid", new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, "Desert Temple", MapDecoration.Type.BANNER_ORANGE, true)),
-            Map.entry("minecraft:igloo", new StructureDiscoveryProfile(DiscoveryCategory.HOUSE, "Igloo", MapDecoration.Type.SNOWY_VILLAGE, false)),
+            Map.entry("minecraft:igloo", new StructureDiscoveryProfile(DiscoveryCategory.HOUSE, "Igloo", MapDecoration.Type.BANNER_LIGHT_BLUE, false)),
 
             Map.entry("dungeons_enhanced:castle", fortress("Castle")),
             Map.entry("dungeons_enhanced:watch_tower", tower("Watchtower")),
@@ -50,7 +47,7 @@ public record StructureDiscoveryProfile(
             Map.entry("dungeons_enhanced:sunken_shrine", shrine("Sunken Shrine")),
             Map.entry("dungeons_enhanced:elders_temple", temple("Elder Temple")),
             Map.entry("dungeons_enhanced:jungle_monument", new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, "Jungle Monument", MapDecoration.Type.MONUMENT, true)),
-            Map.entry("dungeons_enhanced:desert_temple", temple("Desert Temple")),
+            Map.entry("dungeons_enhanced:desert_temple", new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, "Desert Temple", MapDecoration.Type.BANNER_ORANGE, true)),
             Map.entry("dungeons_enhanced:desert_tomb", dungeon("Desert Tomb", false)),
             Map.entry("dungeons_enhanced:deep_crypt", dungeon("Deep Crypt", true)),
             Map.entry("dungeons_enhanced:monster_maze", dungeon("Monster Maze", true)),
@@ -64,10 +61,10 @@ public record StructureDiscoveryProfile(
             Map.entry("valhelsia_structures:forge", new StructureDiscoveryProfile(DiscoveryCategory.HOUSE, "Forge", MapDecoration.Type.BANNER_YELLOW, false)),
             Map.entry("valhelsia_structures:desert_house", new StructureDiscoveryProfile(DiscoveryCategory.HOUSE, "Desert House", MapDecoration.Type.BANNER_YELLOW, false)),
 
-            Map.entry("betterwitchhuts:witch_hut", new StructureDiscoveryProfile(DiscoveryCategory.HOUSE, "Witch Hut", MapDecoration.Type.SWAMP_HUT, false)),
+            Map.entry("betterwitchhuts:witch_hut", new StructureDiscoveryProfile(DiscoveryCategory.HOUSE, "Witch Hut", MapDecoration.Type.BANNER_PURPLE, false)),
             Map.entry("betterwitchhuts:witch_circle", shrine("Witch Circle")),
-            Map.entry("betterdeserttemples:desert_temple", temple("Desert Temple")),
-            Map.entry("betterjungletemples:jungle_temple", new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, "Jungle Temple", MapDecoration.Type.JUNGLE_TEMPLE, true)),
+            Map.entry("betterdeserttemples:desert_temple", new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, "Desert Temple", MapDecoration.Type.BANNER_ORANGE, true)),
+            Map.entry("betterjungletemples:jungle_temple", temple("Jungle Temple")),
 
             Map.entry("mowziesmobs:monastery", fortress("Monastery")),
             Map.entry("born_in_chaos_v1:firewell", shrine("Firewell")),
@@ -97,7 +94,6 @@ public record StructureDiscoveryProfile(
         if (!namespaceDiscoverable(id.getNamespace())) return null;
         String path = id.getPath().toLowerCase(Locale.ROOT);
 
-        // Things that are technically structures but do not read as named destinations.
         if (path.contains("buried_treasure") || path.contains("fossil")) return null;
 
         if (path.contains("mineshaft") || path.endsWith("_mine") || path.contains("mine_")) {
@@ -113,7 +109,7 @@ public record StructureDiscoveryProfile(
             return ruin(prettifyKind(path, "Ruins"), path.contains("castle") || path.contains("ancient"));
         }
         if (path.contains("jungle_temple") || path.contains("jungle_pyramid")) {
-            return new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, prettifyKind(path, "Jungle Temple"), MapDecoration.Type.JUNGLE_TEMPLE, true);
+            return new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, prettifyKind(path, "Jungle Temple"), MapDecoration.Type.MONUMENT, true);
         }
         if (path.contains("monument")) {
             return new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, prettifyKind(path, "Monument"), MapDecoration.Type.MONUMENT, true);
@@ -125,7 +121,7 @@ public record StructureDiscoveryProfile(
             return shrine(prettifyKind(path, "Shrine"));
         }
         if (path.contains("witch_hut")) {
-            return new StructureDiscoveryProfile(DiscoveryCategory.HOUSE, prettifyKind(path, "Witch Hut"), MapDecoration.Type.SWAMP_HUT, false);
+            return new StructureDiscoveryProfile(DiscoveryCategory.HOUSE, prettifyKind(path, "Witch Hut"), MapDecoration.Type.BANNER_PURPLE, false);
         }
         if (path.contains("dark_tower") || path.contains("watch_tower") || path.contains("observation_tower") || path.contains("tower")) {
             return tower(prettifyKind(path, "Tower"));
@@ -147,8 +143,6 @@ public record StructureDiscoveryProfile(
             return new StructureDiscoveryProfile(DiscoveryCategory.LANDMARK, prettifyKind(path, "Landmark"), MapDecoration.Type.BLUE_MARKER, true);
         }
 
-        // For the explicitly supported structure-heavy mods, an unknown building is still more
-        // useful as a generic landmark than silently disappearing from the exploration record.
         if (!"minecraft".equals(id.getNamespace())) {
             return new StructureDiscoveryProfile(DiscoveryCategory.LANDMARK, prettifyKind(path, "Landmark"), MapDecoration.Type.BLUE_MARKER, false);
         }
@@ -160,13 +154,14 @@ public record StructureDiscoveryProfile(
         return false;
     }
 
+    /** 1.20.1 lacks the newer dedicated village map icons, so biome families get banner colors. */
     private static MapDecoration.Type villageIcon(ResourceLocation id) {
         String path = id.getPath();
-        if (path.contains("desert")) return MapDecoration.Type.DESERT_VILLAGE;
-        if (path.contains("savanna")) return MapDecoration.Type.SAVANNA_VILLAGE;
-        if (path.contains("snow")) return MapDecoration.Type.SNOWY_VILLAGE;
-        if (path.contains("taiga")) return MapDecoration.Type.TAIGA_VILLAGE;
-        return MapDecoration.Type.PLAINS_VILLAGE;
+        if (path.contains("desert")) return MapDecoration.Type.BANNER_ORANGE;
+        if (path.contains("savanna")) return MapDecoration.Type.BANNER_YELLOW;
+        if (path.contains("snow")) return MapDecoration.Type.BANNER_LIGHT_BLUE;
+        if (path.contains("taiga")) return MapDecoration.Type.BANNER_GREEN;
+        return MapDecoration.Type.BANNER_WHITE;
     }
 
     private static StructureDiscoveryProfile boss(String kind) {
@@ -178,7 +173,7 @@ public record StructureDiscoveryProfile(
     }
 
     private static StructureDiscoveryProfile temple(String kind) {
-        return new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, kind, MapDecoration.Type.JUNGLE_TEMPLE, true);
+        return new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, kind, MapDecoration.Type.MONUMENT, true);
     }
 
     private static StructureDiscoveryProfile shrine(String kind) {
