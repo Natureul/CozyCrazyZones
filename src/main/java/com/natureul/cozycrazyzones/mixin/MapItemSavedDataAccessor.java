@@ -10,8 +10,9 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
 import javax.annotation.Nullable;
+import java.util.Map;
 
-/** Internal hooks used by the authored Hearthlands guide map. */
+/** Internal hooks used by CozyCrazyZones-authored map markers. */
 @Mixin(MapItemSavedData.class)
 public interface MapItemSavedDataAccessor {
     @Mutable
@@ -21,6 +22,9 @@ public interface MapItemSavedDataAccessor {
     @Mutable
     @Accessor("centerZ")
     void cozyzones$setCenterZ(int value);
+
+    @Accessor("decorations")
+    Map<String, MapDecoration> cozyzones$getDecorations();
 
     @Invoker("addDecoration")
     void cozyzones$addNamedDecoration(MapDecoration.Type type,
