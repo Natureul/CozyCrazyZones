@@ -7,7 +7,7 @@ import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
-/** Server-side retry/lifecycle hooks for personal starter Atlases and the shared desk guide map. */
+/** Server-side retry/lifecycle hooks for the personal starter Atlas and shared Hearthlands desk map. */
 @Mod.EventBusSubscriber(modid = CozyCrazyZones.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class StarterVillageMapEvents {
     private StarterVillageMapEvents() {}
@@ -15,17 +15,22 @@ public final class StarterVillageMapEvents {
     @SubscribeEvent
     public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
+            // Grant the personal Atlas first, then claim/convert the decorative desk frame into the
+            // real filled Hearthlands map before Atlas routing looks for legacy frame-held Atlases.
+            // This keeps the two navigation surfaces unambiguously separate.
             StarterAtlasService.ensureStarterAtlas(player);
-            StarterVillageMapService.begin(player);
             StarterDeskVillageMapService.begin(player);
+            StarterVillageMapService.begin(player);
         }
     }
 
     @SubscribeEvent
     public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
         if (event.phase == TickEvent.Phase.END && event.player instanceof ServerPlayer player) {
-            StarterVillageMapService.tick(player);
+            // Same ordering during retries: if the starter entities arrive a tick late, the desk
+            // frame is still converted before the exact-route service can mistake it for the player Atlas.
             StarterDeskVillageMapService.tick(player);
+            StarterVillageMapService.tick(player);
         }
     }
 
