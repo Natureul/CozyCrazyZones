@@ -7,6 +7,7 @@
   "mixins": [
     "ChunkGeneratorMixin",
     "StructureManagerAccessor",
+    "MapItemSavedDataAccessor",
     "NoiseBasedChunkGeneratorMixin",
     "MinecraftServerMixin"
   ],
