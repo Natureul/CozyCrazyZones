@@ -20,11 +20,10 @@ public final class DiscoveryServerEvents {
     public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
         if (event.phase != TickEvent.Phase.END || !(event.player instanceof ServerPlayer player)) return;
 
-        // The sequencer is O(1) and normally has no queue at all.
         StingerService.tick(player);
 
-        // Structure membership and pending Atlas work are sampled only once per second. Both operate
-        // exclusively on loaded/current-player data; neither performs a radius locate or chunk scan.
+        // Loaded-position structure membership and Atlas marker work are sampled once per second.
+        // Neither performs a radius locate nor generates remote chunks.
         if (player.tickCount % 20 == 0) {
             StructureDiscoveryService.tick(player);
             AtlasDiscoveryMarkerService.tick(player);
@@ -33,7 +32,10 @@ public final class DiscoveryServerEvents {
 
     @SubscribeEvent
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
-        if (event.getEntity() instanceof ServerPlayer player) StingerService.clear(player);
+        if (event.getEntity() instanceof ServerPlayer player) {
+            StingerService.clear(player);
+            AtlasDiscoveryMarkerService.removeRuntimeState(player);
+        }
     }
 
     @SubscribeEvent
@@ -46,8 +48,6 @@ public final class DiscoveryServerEvents {
 
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
-        // Dedicated test command avoids forcing the player to travel thousands of blocks simply to
-        // tune/check audio. It is deliberately available without operator permissions.
         event.getDispatcher().register(Commands.literal("cozystinger")
                 .executes(ctx -> replayZone(ctx.getSource()))
                 .then(Commands.literal("zone").executes(ctx -> replayZone(ctx.getSource())))
