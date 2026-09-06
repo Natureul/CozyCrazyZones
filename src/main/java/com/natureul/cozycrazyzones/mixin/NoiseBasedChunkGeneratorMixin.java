@@ -1,5 +1,6 @@
 package com.natureul.cozycrazyzones.mixin;
 
+import com.natureul.cozycrazyzones.AspenFinalizer;
 import com.natureul.cozycrazyzones.RegionalBiomePostProcessor;
 import com.natureul.cozycrazyzones.WorldGeographyContext;
 import net.minecraft.world.level.StructureManager;
@@ -18,15 +19,6 @@ import java.util.concurrent.Executor;
 @Mixin(NoiseBasedChunkGenerator.class)
 public abstract class NoiseBasedChunkGeneratorMixin {
 
-    /**
-     * TerraBlender/Citadel finish their native biome selection first. We then rewrite the completed
-     * chunk palette, avoiding all getNoiseBiome mixin-order races.
-     *
-     * Important: terrain density itself is intentionally left to Tectonic/Minecraft. Earlier builds
-     * tried to turn native ocean basins into land after density generation; that produced flat plates,
-     * blocky shelf walls and stranded ocean structures. CozyCrazyZones now keeps native terrain intact
-     * and solves the "starter region swallowed by ocean" problem by choosing a land-rich shared spawn.
-     */
     @Inject(method = "createBiomes", at = @At("RETURN"), cancellable = true)
     private void cozyzones$regionalizeCompletedBiomePalette(Executor executor,
                                                              RandomState randomState,
@@ -44,6 +36,13 @@ public abstract class NoiseBasedChunkGeneratorMixin {
             RegionalBiomePostProcessor.regionalize(
                     generated,
                     seaLevel,
+                    generator.getBiomeSource(),
+                    randomState.sampler()
+            );
+            // Defense-in-depth for the one biome that screenshots proved could still leak through
+            // another mod's finished-palette path. Fast path is only sixteen biome-holder reads.
+            AspenFinalizer.sanitize(
+                    generated,
                     generator.getBiomeSource(),
                     randomState.sampler()
             );

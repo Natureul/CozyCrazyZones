@@ -1,0 +1,110 @@
+package com.natureul.cozycrazyzones;
+
+import net.minecraft.core.Holder;
+import net.minecraft.core.QuartPos;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.world.level.biome.Climate;
+import net.minecraft.world.level.chunk.ChunkAccess;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Last-line Aspen Glade guard at the actual chunk palette.
+ *
+ * Source-level guards should already prevent illegal Aspen. This finalizer exists because the
+ * starter screenshots proved that one upstream worldgen path could still leak it. The fast path is
+ * only sixteen surface-palette reads per generated chunk; a second palette fill occurs only when
+ * Aspen is actually present.
+ */
+public final class AspenFinalizer {
+    private static final ResourceLocation ASPEN = id("biomesoplenty:aspen_glade");
+
+    private AspenFinalizer() {}
+
+    public static void sanitize(ChunkAccess chunk, BiomeSource source, Climate.Sampler sampler) {
+        if (!WorldGeographyContext.prepared() || !surfaceContainsAspen(chunk)) return;
+
+        Map<ResourceLocation, Holder<Biome>> lookup = new HashMap<>();
+        for (Holder<Biome> holder : source.possibleBiomes()) {
+            holder.unwrapKey().ifPresent(key -> lookup.put(key.location(), holder));
+        }
+
+        chunk.fillBiomesFromNoise((quartX, quartY, quartZ, ignored) -> {
+            Holder<Biome> original = rawNoiseBiome(chunk, quartX, quartY, quartZ);
+            ResourceLocation originalId = original.unwrapKey().map(key -> key.location()).orElse(null);
+            if (!ASPEN.equals(originalId) || QuartPos.toBlock(quartY) < 48) return original;
+
+            int blockX = QuartPos.toBlock(quartX);
+            int blockZ = QuartPos.toBlock(quartZ);
+            RegionalCell cell = WorldGeographyContext.cellAt(blockX, blockZ);
+            boolean legal = !WorldGeographyContext.provisionalAnchor()
+                    && cell.macroRegion() == MacroRegion.WEST
+                    && cell.influenceBand() == RegionalInfluenceBand.ESTABLISHED
+                    && cell.macroBoundaryStrength() >= 0.42D;
+            if (legal) return original;
+
+            ResourceLocation target;
+            if (WorldGeographyContext.provisionalAnchor()
+                    || cell.influenceBand() != RegionalInfluenceBand.ESTABLISHED
+                    || cell.macroBoundaryStrength() < 0.42D) {
+                target = firstAvailable(lookup,
+                        id("minecraft:birch_forest"),
+                        id("minecraft:forest"),
+                        id("biomesoplenty:woodland"),
+                        id("minecraft:plains"));
+            } else {
+                target = switch (cell.macroRegion()) {
+                    case NORTH -> firstAvailable(lookup,
+                            id("minecraft:taiga"), id("biomesoplenty:coniferous_forest"), id("minecraft:birch_forest"));
+                    case EAST -> firstAvailable(lookup,
+                            id("minecraft:sparse_jungle"), id("biomesoplenty:jacaranda_glade"),
+                            id("biomesoplenty:overgrown_greens"), id("minecraft:forest"));
+                    case SOUTH -> firstAvailable(lookup,
+                            id("minecraft:savanna"), id("biomesoplenty:lush_savanna"), id("minecraft:plains"));
+                    case WEST -> firstAvailable(lookup, id("minecraft:birch_forest"), id("minecraft:forest"));
+                };
+            }
+
+            return target == null ? original : lookup.getOrDefault(target, original);
+        }, sampler);
+    }
+
+    private static boolean surfaceContainsAspen(ChunkAccess chunk) {
+        int quartY = QuartPos.fromBlock(80);
+        int minQuartY = QuartPos.fromBlock(chunk.getMinBuildHeight());
+        int maxQuartY = minQuartY + QuartPos.fromBlock(chunk.getHeight()) - 1;
+        int clampedQuartY = Math.max(minQuartY, Math.min(maxQuartY, quartY));
+        int blockY = QuartPos.toBlock(clampedQuartY);
+        int sectionIndex = chunk.getSectionIndex(blockY);
+        for (int localX = 0; localX < 4; localX++) {
+            for (int localZ = 0; localZ < 4; localZ++) {
+                Holder<Biome> holder = chunk.getSection(sectionIndex).getNoiseBiome(localX, clampedQuartY & 3, localZ);
+                ResourceLocation id = holder.unwrapKey().map(key -> key.location()).orElse(null);
+                if (ASPEN.equals(id)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static Holder<Biome> rawNoiseBiome(ChunkAccess chunk, int quartX, int quartY, int quartZ) {
+        int minQuartY = QuartPos.fromBlock(chunk.getMinBuildHeight());
+        int maxQuartY = minQuartY + QuartPos.fromBlock(chunk.getHeight()) - 1;
+        int clampedQuartY = Math.max(minQuartY, Math.min(maxQuartY, quartY));
+        int blockY = QuartPos.toBlock(clampedQuartY);
+        int sectionIndex = chunk.getSectionIndex(blockY);
+        return chunk.getSection(sectionIndex).getNoiseBiome(quartX & 3, clampedQuartY & 3, quartZ & 3);
+    }
+
+    private static ResourceLocation firstAvailable(Map<ResourceLocation, Holder<Biome>> lookup,
+                                                   ResourceLocation... candidates) {
+        for (ResourceLocation candidate : candidates) if (lookup.containsKey(candidate)) return candidate;
+        return null;
+    }
+
+    private static ResourceLocation id(String value) {
+        return new ResourceLocation(value);
+    }
+}
