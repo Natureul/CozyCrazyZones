@@ -5,22 +5,27 @@ import net.minecraft.world.level.saveddata.maps.MapDecoration;
 /**
  * Visual grammar for Atlas discoveries.
  *
- * Shape communicates category when vanilla 1.20.1 provides a useful fixed icon; otherwise banner
- * color communicates cardinal region consistently: Frostmarch light blue, Greenveil green,
- * Sunscar orange, Harvestwood brown. This replaces the previous assortment of category colors.
+ * Shape communicates category when vanilla 1.20.1 provides a useful fixed icon. Banner-based
+ * discoveries use a consistent geography palette: Inner Hearthlands white, Frostmarch light blue,
+ * Greenveil green, Sunscar orange, Harvestwood brown.
  */
 public final class RegionalMapSymbolPolicy {
     private RegionalMapSymbolPolicy() {}
 
-    public static MapDecoration.Type iconFor(StructureDiscoveryProfile profile, MacroRegion region) {
+    public static MapDecoration.Type iconFor(StructureDiscoveryProfile profile, RegionalCell cell) {
         return switch (profile.category()) {
             case DUNGEON -> MapDecoration.Type.RED_X;
             case RUIN -> MapDecoration.Type.TARGET_X;
             case TEMPLE -> MapDecoration.Type.MONUMENT;
             case TOWER, FORTRESS -> MapDecoration.Type.MANSION;
             case BOSS -> MapDecoration.Type.BANNER_RED;
-            case VILLAGE, SHRINE, CAMP, MINE, SHIP, HOUSE, PORTAL, LANDMARK -> regionalBanner(region);
+            case VILLAGE, SHRINE, CAMP, MINE, SHIP, HOUSE, PORTAL, LANDMARK -> bannerFor(cell);
         };
+    }
+
+    public static MapDecoration.Type bannerFor(RegionalCell cell) {
+        if (HearthlandsNeutralNames.shouldUseNeutralName(cell)) return MapDecoration.Type.BANNER_WHITE;
+        return regionalBanner(cell.macroRegion());
     }
 
     public static MapDecoration.Type regionalBanner(MacroRegion region) {
