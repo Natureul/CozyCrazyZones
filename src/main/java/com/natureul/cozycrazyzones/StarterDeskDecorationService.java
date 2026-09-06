@@ -1,6 +1,7 @@
 package com.natureul.cozycrazyzones;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -21,11 +22,16 @@ import java.util.concurrent.ConcurrentMap;
 
 /**
  * The desk map went through several increasingly clever render workarounds and remained fragile.
- * The personal Atlas is now the authoritative exploration record, so the desk gets something that
- * is useful, thematic and impossible to desync: a normal framed survey compass.
+ * The personal Atlas is now the authoritative exploration record, so the authored desk navigation
+ * frame gets something useful, thematic and impossible to desync: a normal survey compass.
+ *
+ * Selection is deliberately conservative. We will replace the old frame-held starter Atlas or a
+ * CozyCrazyZones-tagged desk guide, but never an arbitrary framed map the player later hangs near spawn.
  */
 public final class StarterDeskDecorationService {
     private static final ResourceLocation ATLAS_ID = new ResourceLocation("map_atlases", "atlas");
+    private static final String OLD_GUIDE_TAG = "CozyCrazyZonesDeskVillageGuide";
+    private static final String OLD_GUIDE_NAME = "Hearthlands Village Map";
     private static final String DONE_TAG = "CozyCrazyZonesDeskCompassInstalled";
     private static final int RETRY_INTERVAL_TICKS = 20;
     private static final int MAX_ATTEMPTS = 45;
@@ -87,13 +93,17 @@ public final class StarterDeskDecorationService {
         frame.setItem(compass, false);
         player.getPersistentData().putBoolean(DONE_TAG, true);
 
-        CozyCrazyZones.LOGGER.info("Retired the fragile starter desk map and installed the Hearthlands Survey Compass");
+        CozyCrazyZones.LOGGER.info("Retired the authored starter desk map and installed the Hearthlands Survey Compass");
         return true;
     }
 
     private static boolean isOldDeskNavigationItem(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
-        if (stack.getItem() instanceof MapItem) return true;
-        return ATLAS_ID.equals(ForgeRegistries.ITEMS.getKey(stack.getItem()));
+        if (ATLAS_ID.equals(ForgeRegistries.ITEMS.getKey(stack.getItem()))) return true;
+        if (!(stack.getItem() instanceof MapItem)) return false;
+
+        CompoundTag tag = stack.getTag();
+        if (tag != null && tag.getBoolean(OLD_GUIDE_TAG)) return true;
+        return stack.hasCustomHoverName() && OLD_GUIDE_NAME.equals(stack.getHoverName().getString());
     }
 }
