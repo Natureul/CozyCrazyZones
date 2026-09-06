@@ -38,14 +38,15 @@ import java.util.concurrent.ConcurrentMap;
  * trackingPosition is deliberately disabled on this map. That prevents the item frame itself from
  * being serialized as Minecraft's automatic "Frame" map decoration—the stray marker seen in the
  * earlier playtest. A client-only render hook makes this same filled-map stack look like an ordinary
- * unused map while it remains framed on the desk; removing it reveals the real map and its markers.
+ * unused map while it remains framed on the desk; removing it reveals the real map and its four
+ * named village markers.
  */
 public final class StarterDeskVillageMapService {
     private static final ResourceLocation ATLAS_ID = new ResourceLocation("map_atlases", "atlas");
 
     private static final String GUIDE_TAG = "CozyCrazyZonesDeskVillageGuide";
     private static final String GUIDE_VERSION_TAG = "CozyCrazyZonesDeskVillageGuideVersion";
-    private static final int GUIDE_VERSION = 3;
+    private static final int GUIDE_VERSION = 4;
 
     private static final int RETRY_INTERVAL_TICKS = 20;
     private static final int MAX_ATTEMPTS = 45;
@@ -66,6 +67,14 @@ public final class StarterDeskVillageMapService {
 
     public static void tick(ServerPlayer player) {
         if (player.serverLevel().dimension() != Level.OVERWORLD) return;
+
+        // Vanilla persists target-decoration coordinates on the ItemStack, but not the optional text
+        // component stored in MapItemSavedData's live decoration map. Re-assert the names once per
+        // second while the player carries this special guide, so names survive save/reload and a
+        // quick grab from the desk without turning this into an always-on per-tick inventory cost.
+        if (player.tickCount % RETRY_INTERVAL_TICKS == 0) {
+            refreshCarriedGuideNames(player);
+        }
 
         Integer attempts = PENDING.get(player.getUUID());
         if (attempts != null && player.tickCount % RETRY_INTERVAL_TICKS == 0) {
@@ -125,6 +134,7 @@ public final class StarterDeskVillageMapService {
                 && existingTag.getBoolean(GUIDE_TAG)
                 && existingTag.getInt(GUIDE_VERSION_TAG) == GUIDE_VERSION
                 && targetTagsMatch(existingTag, targets)) {
+            ensureNamedDecorations(level, existing);
             PAINTING.putIfAbsent(player.getUUID(), PAINT_TICKS);
             return true;
         }
@@ -143,6 +153,16 @@ public final class StarterDeskVillageMapService {
         accessor.cozyzones$setCenterZ(spawn.getZ());
 
         MapItemSavedData.addTargetDecoration(guide, spawn, "Home", MapDecoration.Type.BLUE_MARKER);
+        accessor.cozyzones$addNamedDecoration(
+                MapDecoration.Type.BLUE_MARKER,
+                level,
+                "Home",
+                spawn.getX(),
+                spawn.getZ(),
+                180.0D,
+                Component.literal("Home")
+        );
+
         for (MacroRegion region : MacroRegion.values()) {
             ChunkPos target = targets.get(region);
             if (target == null) continue;
@@ -155,6 +175,15 @@ public final class StarterDeskVillageMapService {
                     overview,
                     villageName,
                     MapDecoration.Type.TARGET_X
+            );
+            accessor.cozyzones$addNamedDecoration(
+                    MapDecoration.Type.TARGET_X,
+                    level,
+                    villageName,
+                    overview.getX(),
+                    overview.getZ(),
+                    180.0D,
+                    Component.literal(villageName)
             );
         }
         guide.setHoverName(Component.literal("Hearthlands Village Map"));
@@ -181,8 +210,69 @@ public final class StarterDeskVillageMapService {
                     .append(',')
                     .append(target.getMiddleBlockZ());
         }
-        CozyCrazyZones.LOGGER.info("Starter-house Hearthlands map prepared with four real village anchors: {}", summary);
+        CozyCrazyZones.LOGGER.info("Starter-house Hearthlands map prepared with four named real village anchors: {}", summary);
         return true;
+    }
+
+    private static void refreshCarriedGuideNames(ServerPlayer player) {
+        ServerLevel level = player.serverLevel();
+        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            if (isPreparedGuide(stack)) ensureNamedDecorations(level, stack);
+        }
+        ItemStack offhand = player.getOffhandItem();
+        if (isPreparedGuide(offhand)) ensureNamedDecorations(level, offhand);
+    }
+
+    private static boolean isPreparedGuide(ItemStack stack) {
+        if (stack == null || stack.isEmpty() || !(stack.getItem() instanceof MapItem)) return false;
+        CompoundTag tag = stack.getTag();
+        return tag != null
+                && tag.getBoolean(GUIDE_TAG)
+                && tag.getInt(GUIDE_VERSION_TAG) == GUIDE_VERSION;
+    }
+
+    /** Restore the optional visible labels that vanilla does not serialize in the ItemStack target list. */
+    private static void ensureNamedDecorations(ServerLevel level, ItemStack guide) {
+        if (!isPreparedGuide(guide)) return;
+        MapItemSavedData data = MapItem.getSavedData(guide, level);
+        CompoundTag tag = guide.getTag();
+        if (data == null || tag == null) return;
+
+        MapItemSavedDataAccessor accessor = (MapItemSavedDataAccessor) (Object) data;
+        BlockPos spawn = level.getSharedSpawnPos();
+        accessor.cozyzones$addNamedDecoration(
+                MapDecoration.Type.BLUE_MARKER,
+                level,
+                "Home",
+                spawn.getX(),
+                spawn.getZ(),
+                180.0D,
+                Component.literal("Home")
+        );
+
+        for (MacroRegion region : MacroRegion.values()) {
+            String xTag = targetTag(region, "X");
+            String zTag = targetTag(region, "Z");
+            if (!tag.contains(xTag) || !tag.contains(zTag)) continue;
+
+            int targetX = tag.getInt(xTag);
+            int targetZ = tag.getInt(zTag);
+            ChunkPos targetChunk = new ChunkPos(targetX >> 4, targetZ >> 4);
+            BlockPos realVillage = new BlockPos(targetX, spawn.getY(), targetZ);
+            BlockPos overview = overviewMarker(spawn, realVillage);
+            String villageName = HearthVillageNames.nameFor(region, level.getSeed(), targetChunk);
+
+            accessor.cozyzones$addNamedDecoration(
+                    MapDecoration.Type.TARGET_X,
+                    level,
+                    villageName,
+                    overview.getX(),
+                    overview.getZ(),
+                    180.0D,
+                    Component.literal(villageName)
+            );
+        }
     }
 
     private static BlockPos overviewMarker(BlockPos spawn, BlockPos realVillage) {
