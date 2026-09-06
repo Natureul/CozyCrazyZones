@@ -57,7 +57,15 @@ public final class StructureNameSavedData extends SavedData {
                               ChunkPos start) {
         String key = keyFor(structureId, start);
         String existing = names.get(key);
-        if (existing != null) return existing;
+        if (existing != null) {
+            if (StructurePlaceNameGenerator.isTunnelGoreStructure(structureId)
+                    && StructurePlaceNameGenerator.looksLikeLegacyTunnelGoreName(existing)) {
+                used.remove(existing);
+                names.remove(key);
+            } else {
+                return existing;
+            }
+        }
 
         for (int attempt = 0; attempt < MAX_CANDIDATES; attempt++) {
             String candidate = StructurePlaceNameGenerator.candidate(profile, cell, worldSeed, structureId, start, attempt);
