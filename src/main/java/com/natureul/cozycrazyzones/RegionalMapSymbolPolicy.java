@@ -13,7 +13,11 @@ public final class RegionalMapSymbolPolicy {
     private RegionalMapSymbolPolicy() {}
 
     public static MapDecoration.Type iconFor(StructureDiscoveryProfile profile, RegionalCell cell) {
-        return switch (profile.category()) {
+        return iconForCategory(profile.category(), cell);
+    }
+
+    public static MapDecoration.Type iconForCategory(DiscoveryCategory category, RegionalCell cell) {
+        return switch (category) {
             case DUNGEON -> MapDecoration.Type.RED_X;
             case RUIN -> MapDecoration.Type.TARGET_X;
             case TEMPLE -> MapDecoration.Type.MONUMENT;
