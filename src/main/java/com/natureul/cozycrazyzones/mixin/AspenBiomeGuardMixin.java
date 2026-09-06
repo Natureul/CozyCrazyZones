@@ -17,12 +17,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Aspen Glade is a Harvestwood/autumn biome, not neutral starter countryside.
- *
- * The completed-chunk postprocessor already enforces this visually. This narrow source-layer guard
- * closes the earlier-biome-query path as well, so spawn selection, structures and feature-time biome
- * reads cannot still treat BOP Aspen Glade as a generic forest before the final palette is written.
- * It deliberately touches no biome except Aspen Glade.
+ * Aspen Glade is a Harvestwood/autumn biome, never neutral starter countryside.
+ * It is legal only once the player is in established WEST country. Provisional spawn search,
+ * Shared Core, the entire cardinal transition band and every other macro-region replace it.
  */
 @Mixin(value = MultiNoiseBiomeSource.class, priority = 50)
 public abstract class AspenBiomeGuardMixin {
@@ -50,43 +47,44 @@ public abstract class AspenBiomeGuardMixin {
         int blockZ = QuartPos.toBlock(quartZ);
         RegionalCell cell = WorldGeographyContext.cellAt(blockX, blockZ);
 
-        // Aspen belongs to established Harvestwood. Near home and on broad macro seams it must read
-        // as ordinary shared countryside instead of leaking the western autumn identity into spawn.
-        if (cell.influenceBand() == RegionalInfluenceBand.SHARED_CORE || cell.macroBoundaryStrength() < 0.42D) {
-            Holder<Biome> replacement = cozyzones$firstAvailable(
+        boolean legalHarvestwoodAspen = !WorldGeographyContext.provisionalAnchor()
+                && cell.macroRegion() == MacroRegion.WEST
+                && cell.influenceBand() == RegionalInfluenceBand.ESTABLISHED
+                && cell.macroBoundaryStrength() >= 0.42D;
+        if (legalHarvestwoodAspen) return;
+
+        Holder<Biome> replacement;
+        if (WorldGeographyContext.provisionalAnchor()
+                || cell.influenceBand() != RegionalInfluenceBand.ESTABLISHED
+                || cell.macroBoundaryStrength() < 0.42D) {
+            replacement = cozyzones$firstAvailable(
                     id("minecraft:birch_forest"),
                     id("minecraft:forest"),
-                    id("biomesoplenty:woodland")
-            );
-            if (replacement != null) cir.setReturnValue(replacement);
-            return;
-        }
-
-        if (cell.macroRegion() == MacroRegion.WEST) return;
-
-        Holder<Biome> replacement = switch (cell.macroRegion()) {
-            case NORTH -> cozyzones$firstAvailable(
-                    id("minecraft:taiga"),
-                    id("biomesoplenty:coniferous_forest"),
-                    id("minecraft:birch_forest")
-            );
-            case EAST -> cozyzones$firstAvailable(
-                    id("minecraft:sparse_jungle"),
-                    id("biomesoplenty:jacaranda_glade"),
-                    id("biomesoplenty:overgrown_greens"),
-                    id("minecraft:forest")
-            );
-            case SOUTH -> cozyzones$firstAvailable(
-                    id("minecraft:savanna"),
-                    id("biomesoplenty:lush_savanna"),
+                    id("biomesoplenty:woodland"),
                     id("minecraft:plains")
             );
-            case WEST -> null;
-        };
-
-        if (replacement == null) {
-            replacement = cozyzones$firstAvailable(id("minecraft:birch_forest"), id("minecraft:forest"));
+        } else {
+            replacement = switch (cell.macroRegion()) {
+                case NORTH -> cozyzones$firstAvailable(
+                        id("minecraft:taiga"),
+                        id("biomesoplenty:coniferous_forest"),
+                        id("minecraft:birch_forest")
+                );
+                case EAST -> cozyzones$firstAvailable(
+                        id("minecraft:sparse_jungle"),
+                        id("biomesoplenty:jacaranda_glade"),
+                        id("biomesoplenty:overgrown_greens"),
+                        id("minecraft:forest")
+                );
+                case SOUTH -> cozyzones$firstAvailable(
+                        id("minecraft:savanna"),
+                        id("biomesoplenty:lush_savanna"),
+                        id("minecraft:plains")
+                );
+                case WEST -> cozyzones$firstAvailable(id("minecraft:birch_forest"), id("minecraft:forest"));
+            };
         }
+
         if (replacement != null) cir.setReturnValue(replacement);
     }
 
