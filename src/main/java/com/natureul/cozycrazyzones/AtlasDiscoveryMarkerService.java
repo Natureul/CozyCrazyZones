@@ -9,6 +9,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.MapItem;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
@@ -19,8 +20,10 @@ import javax.annotation.Nullable;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -28,17 +31,20 @@ import java.util.UUID;
  *
  * Map Atlases uses vanilla MapItemSavedData tiles, so CozyCrazyZones can give categories genuinely
  * different symbols without bundling a second map renderer. The compact known-place ledger also
- * lets us migrate old marker styles: banner-based discoveries are normalized to the current
- * Inner-Hearthlands/cardinal color language as they are refreshed.
+ * lets us migrate old marker styles and keep one logical place from appearing on multiple Atlas
+ * tiles when a starter marker is later refined by physical discovery.
  */
 public final class AtlasDiscoveryMarkerService {
     private static final ResourceLocation ATLAS_ID = new ResourceLocation("map_atlases", "atlas");
+    private static final ResourceLocation TUNNEL_GORE_LAIR = new ResourceLocation("skarrier_mobs", "tunnel_gore_lair_x");
+    private static final String TUNNEL_GORE_KEY_PREFIX = "structure@skarrier_mobs:tunnel_gore_lair_x@";
     private static final String PENDING_TAG = "cozycrazyzones:pending_atlas_markers";
     private static final String KNOWN_TAG = "cozycrazyzones:known_atlas_markers";
     private static final byte DEFAULT_SCALE = 2;
     private static final int REFRESH_BATCH = 8;
 
     private static final Map<UUID, Integer> REFRESH_CURSOR = new HashMap<>();
+    private static final Map<UUID, Set<String>> DEDUPE_SEEN = new HashMap<>();
 
     private AtlasDiscoveryMarkerService() {}
 
@@ -89,11 +95,12 @@ public final class AtlasDiscoveryMarkerService {
         String pendingKey = pending.getAllKeys().stream().findFirst().orElse(null);
         if (pendingKey != null) {
             CompoundTag marker = pending.getCompound(pendingKey);
-            normalizeMarkerStyle(level, marker);
+            normalizeMarkerStyle(level, pendingKey, marker);
             syncKnownCopy(player, pendingKey, marker);
-            if (installMarker(level, atlas, pendingKey, marker, true, true)) {
+            if (installMarker(level, atlas, pendingKey, marker, true, true, true)) {
                 pending.remove(pendingKey);
                 player.getPersistentData().put(PENDING_TAG, pending);
+                DEDUPE_SEEN.computeIfAbsent(player.getUUID(), ignored -> new HashSet<>()).add(pendingKey);
             }
         }
 
@@ -109,6 +116,7 @@ public final class AtlasDiscoveryMarkerService {
 
     public static void removeRuntimeState(ServerPlayer player) {
         REFRESH_CURSOR.remove(player.getUUID());
+        DEDUPE_SEEN.remove(player.getUUID());
     }
 
     private static CompoundTag markerTag(DiscoveryCategory category,
@@ -133,36 +141,91 @@ public final class AtlasDiscoveryMarkerService {
         int cursor = Math.floorMod(REFRESH_CURSOR.getOrDefault(player.getUUID(), 0), keys.size());
         int count = Math.min(REFRESH_BATCH, keys.size());
         boolean changed = false;
+        Set<String> cleaned = DEDUPE_SEEN.computeIfAbsent(player.getUUID(), ignored -> new HashSet<>());
 
         for (int i = 0; i < count; i++) {
             String key = keys.get((cursor + i) % keys.size());
             CompoundTag marker = known.getCompound(key);
-            if (normalizeMarkerStyle(player.serverLevel(), marker)) {
+            boolean styleChanged = normalizeMarkerStyle(player.serverLevel(), key, marker);
+            if (styleChanged) {
                 known.put(key, marker.copy());
                 changed = true;
             }
-            installMarker(player.serverLevel(), atlas, key, marker, false, false);
+            boolean firstCleanup = cleaned.add(key);
+            installMarker(player.serverLevel(), atlas, key, marker, false, false, firstCleanup || styleChanged);
         }
         if (changed) player.getPersistentData().put(KNOWN_TAG, known);
         REFRESH_CURSOR.put(player.getUUID(), (cursor + count) % keys.size());
     }
 
-    private static boolean normalizeMarkerStyle(ServerLevel level, CompoundTag marker) {
+    private static boolean normalizeMarkerStyle(ServerLevel level, String discoveryKey, CompoundTag marker) {
         if (marker == null || marker.isEmpty()) return false;
+        boolean changed = migrateSpecialMarker(level, discoveryKey, marker);
+
         DiscoveryCategory category;
         try {
             category = DiscoveryCategory.valueOf(marker.getString("Category"));
         } catch (IllegalArgumentException ex) {
-            return false;
+            return changed;
         }
 
         int x = marker.getInt("X");
         int z = marker.getInt("Z");
         RegionalCell cell = CozyZonesApi.regionalCellAt(level, x, z);
         MapDecoration.Type wanted = RegionalMapSymbolPolicy.iconForCategory(category, cell);
-        if (wanted.name().equals(marker.getString("Icon"))) return false;
-        marker.putString("Icon", wanted.name());
-        return true;
+        if (!wanted.name().equals(marker.getString("Icon"))) {
+            marker.putString("Icon", wanted.name());
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static boolean migrateSpecialMarker(ServerLevel level, String discoveryKey, CompoundTag marker) {
+        if (discoveryKey == null || !discoveryKey.startsWith(TUNNEL_GORE_KEY_PREFIX)) return false;
+
+        ChunkPos start = parseStructureStart(discoveryKey);
+        if (start == null) return false;
+
+        int x = marker.getInt("X");
+        int z = marker.getInt("Z");
+        RegionalCell cell = CozyZonesApi.regionalCellAt(level, x, z);
+        StructureDiscoveryProfile profile = new StructureDiscoveryProfile(
+                DiscoveryCategory.MINE,
+                "Unusual Tunnels",
+                MapDecoration.Type.BANNER_GRAY,
+                false
+        );
+        String wantedName = StructureNameSavedData.get(level).getOrAssign(
+                profile, cell, level.getSeed(), TUNNEL_GORE_LAIR, start
+        );
+
+        boolean changed = false;
+        if (!DiscoveryCategory.MINE.name().equals(marker.getString("Category"))) {
+            marker.putString("Category", DiscoveryCategory.MINE.name());
+            changed = true;
+        }
+        if (!wantedName.equals(marker.getString("Name"))) {
+            marker.putString("Name", wantedName);
+            changed = true;
+        }
+        return changed;
+    }
+
+    @Nullable
+    private static ChunkPos parseStructureStart(String discoveryKey) {
+        int at = discoveryKey.lastIndexOf('@');
+        if (at < 0 || at + 1 >= discoveryKey.length()) return null;
+        String coords = discoveryKey.substring(at + 1);
+        int comma = coords.indexOf(',');
+        if (comma <= 0 || comma + 1 >= coords.length()) return null;
+        try {
+            return new ChunkPos(
+                    Integer.parseInt(coords.substring(0, comma)),
+                    Integer.parseInt(coords.substring(comma + 1))
+            );
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     private static void syncKnownCopy(ServerPlayer player, String key, CompoundTag marker) {
@@ -176,7 +239,8 @@ public final class AtlasDiscoveryMarkerService {
                                          String discoveryKey,
                                          CompoundTag marker,
                                          boolean allowCreateMap,
-                                         boolean clearOldMoonlightPin) {
+                                         boolean clearOldMoonlightPin,
+                                         boolean dedupeVanillaDecoration) {
         MarkerRecord record = parse(marker);
         if (record == null) return true;
 
@@ -210,6 +274,10 @@ public final class AtlasDiscoveryMarkerService {
                 if (added instanceof Boolean accepted && !accepted) return false;
             }
 
+            if (dedupeVanillaDecoration) {
+                removeVanillaDecorationEverywhere(level, ids, data, decorationId(discoveryKey));
+            }
+
             if (clearOldMoonlightPin) {
                 int radius = record.category() == DiscoveryCategory.VILLAGE ? 96 : 24;
                 removeCustomMarkersNear(data, record.pos(), radius);
@@ -226,6 +294,25 @@ public final class AtlasDiscoveryMarkerService {
                 );
             }
             return false;
+        }
+    }
+
+    private static void removeVanillaDecorationEverywhere(ServerLevel level,
+                                                           int[] atlasMapIds,
+                                                           MapItemSavedData target,
+                                                           String decorationId) {
+        for (int id : atlasMapIds) {
+            MapItemSavedData data = MapItem.getSavedData(id, level);
+            if (data != null) removeVanillaDecoration(data, decorationId);
+        }
+        // A just-created target map is not present in the ids snapshot above yet.
+        removeVanillaDecoration(target, decorationId);
+    }
+
+    private static void removeVanillaDecoration(MapItemSavedData data, String decorationId) {
+        MapItemSavedDataAccessor accessor = (MapItemSavedDataAccessor) (Object) data;
+        if (accessor.cozyzones$getDecorations().remove(decorationId) != null) {
+            data.setDirty();
         }
     }
 

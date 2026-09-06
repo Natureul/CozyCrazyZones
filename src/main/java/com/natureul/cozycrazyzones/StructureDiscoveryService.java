@@ -59,6 +59,9 @@ public final class StructureDiscoveryService {
             case "minecraft:mansion" -> new StructureDiscoveryProfile(DiscoveryCategory.FORTRESS, "Woodland Mansion", MapDecoration.Type.MANSION, true);
             case "minecraft:monument" -> new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, "Ocean Monument", MapDecoration.Type.MONUMENT, true);
             case "dungeons_enhanced:black_citadel" -> new StructureDiscoveryProfile(DiscoveryCategory.FORTRESS, "Black Citadel", MapDecoration.Type.BANNER_BLACK, true);
+            // Tunnel Gore is an encounter hidden behind an unnaturally rich ore tunnel. Discovery names
+            // what the player can observe, not the creature waiting at the far end.
+            case "skarrier_mobs:tunnel_gore_lair_x" -> new StructureDiscoveryProfile(DiscoveryCategory.MINE, "Unusual Tunnels", MapDecoration.Type.BANNER_GRAY, false);
             case "valhelsia_structures:deep_spawner_room" -> new StructureDiscoveryProfile(DiscoveryCategory.DUNGEON, "Deep Spawner Room", MapDecoration.Type.RED_X, true);
             case "valhelsia_structures:spawner_dungeon" -> new StructureDiscoveryProfile(DiscoveryCategory.DUNGEON, "Spawner Dungeon", MapDecoration.Type.RED_X, false);
             case "valhelsia_structures:spawner_room" -> new StructureDiscoveryProfile(DiscoveryCategory.DUNGEON, "Spawner Room", MapDecoration.Type.RED_X, false);
@@ -90,7 +93,8 @@ public final class StructureDiscoveryService {
 
         CompoundTag discovered = player.getPersistentData().getCompound(DISCOVERED_TAG);
         if (discovered.getBoolean(discoveryKey)) {
-            if (!AtlasDiscoveryMarkerService.hasKnownMarker(player, discoveryKey)) {
+            String knownName = AtlasDiscoveryMarkerService.knownMarkerName(player, discoveryKey);
+            if (!AtlasDiscoveryMarkerService.hasKnownMarker(player, discoveryKey) || !name.equals(knownName)) {
                 AtlasDiscoveryMarkerService.enqueue(player, discoveryKey, profile.category(), name, marker, icon);
             }
             return;
