@@ -1,5 +1,6 @@
 package com.natureul.cozycrazyzones;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
@@ -71,16 +72,16 @@ public final class StructureDiscoveryService {
         int z = startChunk.getMiddleBlockZ();
         MacroRegion region = CozyZonesApi.regionalCellAt(level, x, z).macroRegion();
         String name = VillageNameSavedData.get(level).getOrAssign(region, level.getSeed(), startChunk);
-        BlockPosWithY marker = new BlockPosWithY(x, player.blockPosition().getY(), z);
+        BlockPos marker = new BlockPos(x, player.blockPosition().getY(), z);
 
         // Mark discovered before presentation: even if a third-party Atlas renderer throws later,
-        // walking around the same village will never spam the title/stinger every second.
+        // walking around the same village will never spam the cue every second.
         discovered.putBoolean(discoveryKey, true);
         player.getPersistentData().put(DISCOVERED_TAG, discovered);
 
         player.displayClientMessage(
                 Component.literal("✦ Village discovered: ")
-                        .append(Component.literal(name).withStyle(region.radialFormatting()))
+                        .append(Component.literal(name).withStyle(region.formatting()))
                         .append(Component.literal(" · " + region.displayName())),
                 true
         );
@@ -90,19 +91,12 @@ public final class StructureDiscoveryService {
                 discoveryKey,
                 DiscoveryCategory.VILLAGE,
                 name,
-                marker.pos()
+                marker
         );
 
         CozyCrazyZones.LOGGER.info(
                 "{} discovered village '{}' at start chunk {},{} ({})",
                 player.getGameProfile().getName(), name, startChunk.x, startChunk.z, region.displayName()
         );
-    }
-
-    /** Tiny helper keeps the marker construction explicit without querying terrain height. */
-    private record BlockPosWithY(int x, int y, int z) {
-        net.minecraft.core.BlockPos pos() {
-            return new net.minecraft.core.BlockPos(x, y, z);
-        }
     }
 }
