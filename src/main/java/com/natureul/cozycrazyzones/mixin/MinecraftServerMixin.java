@@ -2,6 +2,7 @@ package com.natureul.cozycrazyzones.mixin;
 
 import com.natureul.cozycrazyzones.CozyCrazyZones;
 import com.natureul.cozycrazyzones.StarterLandSelector;
+import com.natureul.cozycrazyzones.VillageRingPlanner;
 import com.natureul.cozycrazyzones.WorldGeographyContext;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
@@ -58,5 +59,23 @@ public abstract class MinecraftServerMixin {
         BlockPos spawn = level.getSharedSpawnPos();
         WorldGeographyContext.setSharedSpawn(spawn);
         CozyCrazyZones.LOGGER.info("Initial shared spawn selected {}; regional worldgen anchor snapped before start-region generation", spawn);
+
+        // Reserve all four authored Hearthlands settlements now, while the world itself is being
+        // initialized. Player login/Atlas code merely consumes this already-complete world plan.
+        var generator = level.getChunkSource().getGenerator();
+        var targets = VillageRingPlanner.targetsFor(
+                level,
+                generator,
+                level.getChunkSource().getGeneratorState(),
+                level.registryAccess()
+        );
+        if (targets.size() == 4) {
+            CozyCrazyZones.LOGGER.info("World creation reserved all four Hearthlands starter village anchors");
+        } else {
+            CozyCrazyZones.LOGGER.error(
+                    "World creation expected four Hearthlands village anchors but reserved {}",
+                    targets.size()
+            );
+        }
     }
 }
