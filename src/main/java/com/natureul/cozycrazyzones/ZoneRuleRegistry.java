@@ -59,6 +59,56 @@ public final class ZoneRuleRegistry {
     private static final Set<String> SUPPRESSED_NATURAL_ENTITY_NAMESPACES = Set.of("cataclysm");
 
     static {
+        // ---------------------------------------------------------------------
+        // BIOME-SEMANTIC STRUCTURE FIREWALL
+        // ---------------------------------------------------------------------
+        // Biome identity is post-processed after TerraBlender has chosen the native palette. Some
+        // structure mods ask the original BiomeSource earlier than that, so their "desert" or
+        // "jungle" structure can otherwise survive even after the visible biome becomes Field or
+        // Grassland. These rules make CozyCrazyZones the final authority for obvious biome-specific
+        // structure families.
+
+        regionalStructure("beautify:botanist_house_desert", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Sunscar desert botanist house", MacroRegion.SOUTH);
+        regionalStructure("beautify:botanist_house_savanna", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Sunscar savanna botanist house", MacroRegion.SOUTH);
+        regionalStructure("beautify:botanist_house_snowy", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Frostmarch snowy botanist house", MacroRegion.NORTH);
+        regionalStructure("beautify:botanist_house_taiga", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Frostmarch taiga botanist house", MacroRegion.NORTH);
+
+        regionalStructure("valhelsia_structures:desert_house", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Sunscar desert house", MacroRegion.SOUTH);
+
+        regionalStructure("minecraft:village_desert", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Sunscar village variant", MacroRegion.SOUTH);
+        regionalStructure("minecraft:village_savanna", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Sunscar village variant", MacroRegion.SOUTH);
+        regionalStructure("minecraft:village_snowy", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Frostmarch village variant", MacroRegion.NORTH);
+        regionalStructure("minecraft:village_taiga", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Cool/wooded village variant", MacroRegion.NORTH, MacroRegion.WEST);
+
+        regionalStructure("minecraft:desert_pyramid", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Sunscar desert temple", MacroRegion.SOUTH);
+        regionalStructure("minecraft:jungle_pyramid", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Greenveil jungle temple", MacroRegion.EAST);
+        regionalStructure("minecraft:igloo", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Frostmarch igloo", MacroRegion.NORTH);
+        regionalStructure("minecraft:swamp_hut", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Greenveil swamp hut", MacroRegion.EAST);
+        regionalStructure("betterwitchhuts:witch_hut", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Greenveil witch hut", MacroRegion.EAST);
+        regionalStructure("betterwitchhuts:witch_circle", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Greenveil witch circle", MacroRegion.EAST);
+
+        regionalStructure("minecraft:ruined_portal_desert", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Sunscar desert portal", MacroRegion.SOUTH);
+        regionalStructure("minecraft:ruined_portal_jungle", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Greenveil jungle portal", MacroRegion.EAST);
+        regionalStructure("minecraft:ruined_portal_swamp", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Greenveil swamp portal", MacroRegion.EAST);
+
+        regionalStructure("bettermineshafts:mineshaft_acacia", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Sunscar acacia mineshaft", MacroRegion.SOUTH);
+        regionalStructure("bettermineshafts:mineshaft_desert", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Sunscar desert mineshaft", MacroRegion.SOUTH);
+        regionalStructure("bettermineshafts:mineshaft_mesa", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Sunscar mesa mineshaft", MacroRegion.SOUTH);
+        regionalStructure("bettermineshafts:mineshaft_red_desert", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Sunscar red-desert mineshaft", MacroRegion.SOUTH);
+        regionalStructure("bettermineshafts:mineshaft_jungle", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Greenveil jungle mineshaft", MacroRegion.EAST);
+        regionalStructure("bettermineshafts:mineshaft_lush", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Greenveil lush mineshaft", MacroRegion.EAST);
+        regionalStructure("bettermineshafts:mineshaft_overgrown", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Greenveil overgrown mineshaft", MacroRegion.EAST);
+        regionalStructure("bettermineshafts:mineshaft_ice", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Frostmarch ice mineshaft", MacroRegion.NORTH);
+        regionalStructure("bettermineshafts:mineshaft_spruce_snowy", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Frostmarch snowy-spruce mineshaft", MacroRegion.NORTH);
+        regionalStructure("bettermineshafts:mineshaft_spruce", Region.HEARTHLANDS, RegionalInfluenceBand.CARDINAL_TRANSITION, "Cool/wooded spruce mineshaft", MacroRegion.NORTH, MacroRegion.WEST);
+
+        regionalStructure("born_in_chaos_v1:clown_caravan_savanna", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Sunscar caravan variant", MacroRegion.SOUTH);
+        regionalStructure("born_in_chaos_v1:clown_caravan_taiga", Region.FRONTIER, RegionalInfluenceBand.ESTABLISHED, "Cool/wooded caravan variant", MacroRegion.NORTH, MacroRegion.WEST);
+        regionalStructure("born_in_chaos_v1:infernal_pumpkin", Region.WILDLANDS, RegionalInfluenceBand.ESTABLISHED, "Harvestwood infernal pumpkin", MacroRegion.WEST);
+
+        // ---------------------------------------------------------------------
+        // PROGRESSION STRUCTURES
+        // ---------------------------------------------------------------------
         // Hearthlands: local adventure content. Anything absent is unrestricted.
         structure("dungeons_enhanced:stables", Region.HEARTHLANDS);
         structure("dungeons_enhanced:dungeon_variant", Region.HEARTHLANDS);
@@ -104,15 +154,49 @@ public final class ZoneRuleRegistry {
         regionalStructure("cataclysm:cursed_pyramid", Region.DREAD_REACHES, RegionalInfluenceBand.ESTABLISHED, "Sunscar final: Ancient Remnant", MacroRegion.SOUTH);
 
         // Born in Chaos tower families. Observation towers remain broad local content for now;
-        // Dark Towers are pushed to the Amberwood Dread ecology.
+        // Dark Towers are pushed to the Harvestwood Dread ecology.
         STRUCTURE_PREFIXES = List.of(
                 new PrefixStructureRule("born_in_chaos_v1:observation_tower_", new StructureRule(Region.HEARTHLANDS, Set.of(), RegionalInfluenceBand.SHARED_CORE, "Observation tower family")),
-                new PrefixStructureRule("born_in_chaos_v1:dark_tower_", new StructureRule(Region.DREAD_REACHES, EnumSet.of(MacroRegion.WEST), RegionalInfluenceBand.ESTABLISHED, "Amberwood Born in Chaos deep-forest tower family"))
+                new PrefixStructureRule("born_in_chaos_v1:dark_tower_", new StructureRule(Region.DREAD_REACHES, EnumSet.of(MacroRegion.WEST), RegionalInfluenceBand.ESTABLISHED, "Harvestwood Born in Chaos deep-forest tower family"))
         );
 
-        // Runtime biome dump showed that several mod-wide biome modifiers place mob entries into
-        // essentially every surface biome. These NATURAL-only rules provide the actual progression
-        // firewall; authored raids, hordes, structures, summons and commands intentionally bypass it.
+        // ---------------------------------------------------------------------
+        // NATURAL-SPAWN ECOLOGY FIREWALL
+        // ---------------------------------------------------------------------
+        // The registry audit showed that some biome modifiers inject warm-climate animals into BOP
+        // biomes such as Seasonal Forest and Maple Woods. Therefore visible biome identity alone is
+        // not enough. These rules apply only to NATURAL spawns; authored raids/hordes/structures,
+        // summons and commands intentionally bypass them.
+
+        // Warm/dry wildlife belongs to established Sunscar country, not Frostmarch/Harvestwood.
+        regionalNatural("alexsmobs:gazelle", Region.HEARTHLANDS, true, true, "Sunscar warm-grassland wildlife", MacroRegion.SOUTH);
+        regionalNatural("alexsmobs:elephant", Region.HEARTHLANDS, true, true, "Sunscar warm-grassland wildlife", MacroRegion.SOUTH);
+        regionalNatural("alexsmobs:emu", Region.HEARTHLANDS, true, true, "Sunscar dry-country wildlife", MacroRegion.SOUTH);
+        regionalNatural("alexsmobs:kangaroo", Region.HEARTHLANDS, true, true, "Sunscar dry-country wildlife", MacroRegion.SOUTH);
+        regionalNatural("alexsmobs:maned_wolf", Region.HEARTHLANDS, true, true, "Sunscar open-country wildlife", MacroRegion.SOUTH);
+        regionalNatural("alexsmobs:rhinoceros", Region.HEARTHLANDS, true, true, "Sunscar warm-grassland wildlife", MacroRegion.SOUTH);
+        regionalNatural("alexsmobs:jerboa", Region.HEARTHLANDS, true, true, "Sunscar desert wildlife", MacroRegion.SOUTH);
+        regionalNatural("alexsmobs:roadrunner", Region.HEARTHLANDS, true, true, "Sunscar desert wildlife", MacroRegion.SOUTH);
+        regionalNatural("alexsmobs:rattlesnake", Region.FRONTIER, true, true, "Sunscar dry-country danger", MacroRegion.SOUTH);
+        regionalNatural("alexsmobs:rocky_roller", Region.FRONTIER, true, true, "Sunscar badlands wildlife", MacroRegion.SOUTH);
+        regionalNatural("alexsmobs:guster", Region.FRONTIER, true, true, "Sunscar badlands danger", MacroRegion.SOUTH);
+        regionalNatural("alexsmobs:tarantula_hawk", Region.FRONTIER, true, true, "Sunscar desert danger", MacroRegion.SOUTH);
+        regionalNatural("alexsmobs:sunbird", Region.WILDLANDS, true, true, "Sunscar high-tier roaming creature", MacroRegion.SOUTH);
+
+        // Tropical wildlife is kept in Greenveil once its ecology has actually emerged.
+        regionalNatural("alexsmobs:gorilla", Region.HEARTHLANDS, true, true, "Greenveil tropical wildlife", MacroRegion.EAST);
+        regionalNatural("alexsmobs:tiger", Region.FRONTIER, true, true, "Greenveil jungle predator", MacroRegion.EAST);
+        regionalNatural("alexsmobs:toucan", Region.HEARTHLANDS, true, true, "Greenveil tropical bird", MacroRegion.EAST);
+        regionalNatural("alexsmobs:capuchin_monkey", Region.HEARTHLANDS, true, true, "Greenveil tropical wildlife", MacroRegion.EAST);
+        regionalNatural("alexsmobs:anaconda", Region.FRONTIER, true, true, "Greenveil wet-jungle predator", MacroRegion.EAST);
+        regionalNatural("alexsmobs:caiman", Region.FRONTIER, true, true, "Greenveil wetland predator", MacroRegion.EAST);
+        regionalNatural("alexsmobs:crocodile", Region.FRONTIER, true, true, "Greenveil wetland predator", MacroRegion.EAST);
+
+        // Cold/temperate large wildlife. Moose and grizzlies make sense in both the northern woods
+        // and the old-growth Harvestwood rather than across every biome modifier that happens to add them.
+        regionalNatural("alexsmobs:snow_leopard", Region.FRONTIER, true, true, "Frostmarch alpine predator", MacroRegion.NORTH);
+        regionalNatural("alexsmobs:moose", Region.HEARTHLANDS, true, true, "Cool forest wildlife", MacroRegion.NORTH, MacroRegion.WEST);
+        regionalNatural("alexsmobs:grizzly_bear", Region.FRONTIER, true, true, "Cool/old-growth predator", MacroRegion.NORTH, MacroRegion.WEST);
 
         // Frontier ecology: recognizable step above the Hearthlands baseline.
         regionalNatural("mowziesmobs:foliaath", Region.FRONTIER, false, true, "Greenveil biome predator", MacroRegion.EAST);
@@ -143,7 +227,7 @@ public final class ZoneRuleRegistry {
         natural("born_in_chaos_v1:missioner", Region.WILDLANDS, false, true, "NATURAL spawn only; authored appearances remain legal");
         natural("born_in_chaos_v1:nightmare_stalker", Region.WILDLANDS, false, true, "Fast high-danger roaming predator");
         natural("born_in_chaos_v1:mother_spider", Region.WILDLANDS, false, true, "Large spider/miniboss-class natural spawn");
-        regionalNatural("born_in_chaos_v1:sir_pumpkinhead", Region.WILDLANDS, false, true, "Amberwood seasonal Wildlands boss; non-NATURAL authored appearances bypass", MacroRegion.WEST);
+        regionalNatural("born_in_chaos_v1:sir_pumpkinhead", Region.WILDLANDS, false, true, "Harvestwood seasonal Wildlands boss; non-NATURAL authored appearances bypass", MacroRegion.WEST);
         natural("born_in_chaos_v1:fallen_chaos_knight", Region.WILDLANDS, true, false, "Disabled until Scarlet Persecutor suppression interaction is tested");
 
         // Dread Reaches apex roamers.
