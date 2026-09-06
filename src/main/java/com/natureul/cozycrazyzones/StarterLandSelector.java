@@ -16,14 +16,15 @@ import java.util.List;
  *
  * Tectonic already makes excellent large-scale landforms. The right way to keep the Hearthlands
  * from being swallowed by a huge ocean is therefore to start on the interior/shoulder of a natural
- * continent, not to fill an ocean basin after the fact. The selector also checks each cardinal
- * sector separately: a candidate cannot score well merely because three directions are solid land
- * while the fourth is a giant sea.
+ * continent, not to fill an ocean basin after the fact. The selector checks each cardinal sector
+ * separately and now gives the northern sector an extra land-availability preference: Frostmarch
+ * should contain cold coasts and water, but its early-country experience should not repeatedly be
+ * a giant sea simply because the other three directions happened to be excellent land.
  *
  * IMPORTANT: this runs synchronously inside Minecraft's initial-spawn path. getBaseHeight is much
  * more expensive with a large modded noise router than in vanilla, so the selector intentionally
- * uses sparse rings and a hard wall-clock budget. Starter-site quality is useful; making world
- * creation appear hung is not.
+ * reuses its existing sparse cardinal samples rather than adding more probes, and retains a hard
+ * wall-clock budget.
  */
 public final class StarterLandSelector {
     private static final int[] SEARCH_RADII = {2048, 4096, 6144};
@@ -229,8 +230,12 @@ public final class StarterLandSelector {
         double landRatio = landWeight / totalWeight;
         double innerLandRatio = innerLandWeight / innerWeight;
         double weakestCardinal = 1.0D;
+        double northCardinal = 1.0D;
         for (int i = 0; i < sectorTotal.length; i++) {
-            if (sectorTotal[i] > 0.0D) weakestCardinal = Math.min(weakestCardinal, sectorLand[i] / sectorTotal[i]);
+            if (sectorTotal[i] <= 0.0D) continue;
+            double ratio = sectorLand[i] / sectorTotal[i];
+            weakestCardinal = Math.min(weakestCardinal, ratio);
+            if (i == 0) northCardinal = ratio;
         }
 
         double relief = 0.0D;
@@ -242,11 +247,20 @@ public final class StarterLandSelector {
         double usefulLand = Math.min(0.90D, landRatio);
         double usefulInner = Math.min(0.94D, innerLandRatio);
         double usefulCardinal = Math.min(0.72D, weakestCardinal);
-        double score = usefulLand * 95.0D + usefulInner * 60.0D + usefulCardinal * 58.0D;
+        double usefulNorth = Math.min(0.82D, northCardinal);
+        double score = usefulLand * 95.0D
+                + usefulInner * 60.0D
+                + usefulCardinal * 58.0D
+                + usefulNorth * 44.0D;
 
         if (landRatio < 0.68D) score -= (0.68D - landRatio) * 420.0D;
         if (innerLandRatio < 0.80D) score -= (0.80D - innerLandRatio) * 520.0D;
         if (weakestCardinal < 0.46D) score -= (0.46D - weakestCardinal) * 480.0D;
+
+        // Frostmarch gets a stronger floor than the generic "weakest cardinal" safeguard. This is
+        // a preference rather than a hard rejection: water-rich seeds still work, but a continent
+        // with a substantially landier north will decisively beat an otherwise similar candidate.
+        if (northCardinal < 0.60D) score -= (0.60D - northCardinal) * 620.0D;
 
         score += Math.min(8.0D, relief * 0.35D);
         if (centerSurface > 125) score -= (centerSurface - 125) * 0.7D;
