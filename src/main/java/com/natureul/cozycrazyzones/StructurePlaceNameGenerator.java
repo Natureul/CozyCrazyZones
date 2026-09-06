@@ -5,6 +5,8 @@ import net.minecraft.world.level.ChunkPos;
 
 /** Deterministic naming language for discovered destinations. */
 public final class StructurePlaceNameGenerator {
+    private static final ResourceLocation TUNNEL_GORE_LAIR = new ResourceLocation("skarrier_mobs", "tunnel_gore_lair_x");
+
     private static final String[] NORTH_ROOTS = {"Pine","Fir","Frost","Winter","Snow","Rime","Silver","White","Cold","Ice","Wolf","Spruce","Glacier","North","Moonfrost","Bluepine","Snowcap","Everfrost"};
     private static final String[] EAST_ROOTS = {"Fern","Moss","Vine","Willow","Rain","Jade","Orchid","Bramble","Lotus","Cypress","Verdant","Canopy","Reed","Palm","Mangrove","Ivy","Riverfern","Rainleaf"};
     private static final String[] SOUTH_ROOTS = {"Sun","Saffron","Gold","Red","Dust","Cinder","Ember","Copper","Mesa","Dawn","Ochre","Sand","Sol","Bright","Dunefire","Sunstone","Gilded","Warm"};
@@ -15,6 +17,13 @@ public final class StructurePlaceNameGenerator {
     private static final String[] SOUTH_ADJECTIVES = {"Sunscorched","Gilded","Cinder","Saffron","Dustbound","Ember","Ochre","Redstone","Golden","Warm","Dawnlit","Sandworn"};
     private static final String[] WEST_ADJECTIVES = {"Amber","Russet","Harvest","Autumnal","Cider","Maple","Lanternlit","Copperleaf","Goldenleaf","Orchard","Bonfire","Redleaf"};
 
+    // Tunnel Gore deliberately masquerades as an unusually profitable underground find. These names
+    // describe what the player can actually observe -- rich, strangely regular tunnels -- without
+    // spoiling the creature, its lair, or the encounter's greed-versus-danger mechanic.
+    private static final String[] TUNNEL_NOUNS = {"Vein","Seam","Galleries","Cut","Drift","Oreway","Passage","Diggings","Deepworks","Run"};
+    private static final String[] NEUTRAL_TUNNEL_ROOTS = {"Stone","Grey","Deep","Slate","Iron","Silver","Old","Low","Under","Hollowstone","Deepstone","Blackstone"};
+    private static final String[] NEUTRAL_TUNNEL_ADJECTIVES = {"Deep","Slate","Stonebound","Grey","Old","Lower","Quiet","Long","Understone","Darkstone"};
+
     private StructurePlaceNameGenerator() {}
 
     public static String candidate(StructureDiscoveryProfile profile,
@@ -23,6 +32,10 @@ public final class StructurePlaceNameGenerator {
                                    ResourceLocation structureId,
                                    ChunkPos start,
                                    int attempt) {
+        if (TUNNEL_GORE_LAIR.equals(structureId)) {
+            return tunnelGoreCandidate(cell, worldSeed, structureId, start, attempt);
+        }
+
         if (HearthlandsNeutralNames.shouldUseNeutralName(cell)) {
             return HearthlandsNeutralNames.candidateFor(profile, worldSeed, structureId, start, attempt);
         }
@@ -44,6 +57,54 @@ public final class StructurePlaceNameGenerator {
             case 2 -> root + " " + noun;
             default -> "The " + root + " " + noun;
         };
+    }
+
+    private static String tunnelGoreCandidate(RegionalCell cell,
+                                              long worldSeed,
+                                              ResourceLocation structureId,
+                                              ChunkPos start,
+                                              int attempt) {
+        long mixed = mix64(worldSeed ^ start.toLong() ^ structureId.hashCode()
+                ^ 0x6A09E667F3BCC909L ^ (attempt * 0xD1B54A32D192ED03L));
+
+        String[] roots;
+        String[] adjectives;
+        if (HearthlandsNeutralNames.shouldUseNeutralName(cell)) {
+            roots = NEUTRAL_TUNNEL_ROOTS;
+            adjectives = NEUTRAL_TUNNEL_ADJECTIVES;
+        } else {
+            roots = roots(cell.macroRegion());
+            adjectives = adjectives(cell.macroRegion());
+        }
+
+        String root = roots[Math.floorMod((int) mixed, roots.length)];
+        String adjective = adjectives[Math.floorMod((int) (mixed >>> 19), adjectives.length)];
+        String noun = TUNNEL_NOUNS[Math.floorMod((int) (mixed >>> 37), TUNNEL_NOUNS.length)];
+
+        return switch (Math.floorMod(attempt + (int) mixed, 5)) {
+            case 0 -> root + " " + noun;
+            case 1 -> "The " + adjective + " " + noun;
+            case 2 -> merge(root, noun);
+            case 3 -> "The " + root + " " + noun;
+            default -> adjective + " " + noun;
+        };
+    }
+
+    public static boolean isTunnelGoreStructure(ResourceLocation structureId) {
+        return TUNNEL_GORE_LAIR.equals(structureId);
+    }
+
+    public static boolean looksLikeLegacyTunnelGoreName(String name) {
+        if (name == null || name.isBlank()) return false;
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("tunnel gore")
+                || lower.contains("lair")
+                || lower.contains("throne")
+                || lower.contains("sepulcher")
+                || lower.contains("maw")
+                || lower.contains("sanctum")
+                || lower.endsWith(" court")
+                || lower.endsWith(" hollow");
     }
 
     private static String[] nouns(DiscoveryCategory category) {
