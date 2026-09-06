@@ -20,38 +20,41 @@ import java.util.List;
  * sector separately: a candidate cannot score well merely because three directions are solid land
  * while the fourth is a giant sea.
  *
- * Finally, the starter structure needs a build site, not merely a legal player-spawn column. The
- * old PlayerRespawnLogic fallback could choose a dramatic Tectonic peak (one test world landed at
- * Y=240), which left the starter house buried in a slope. We now choose a naturally flatter,
- * moderate-elevation pad from the generator's own pre-feature height function.
+ * IMPORTANT: this runs synchronously inside Minecraft's initial-spawn path. getBaseHeight is much
+ * more expensive with a large modded noise router than in vanilla, so the selector intentionally
+ * uses sparse rings and a hard wall-clock budget. Starter-site quality is useful; making world
+ * creation appear hung is not.
  */
 public final class StarterLandSelector {
     private static final int[] SEARCH_RADII = {2048, 4096, 6144};
+    private static final int[] SAMPLE_RING_RADII = {650, 1300, 2000, 2700};
 
-    private static final int SAMPLE_RADIUS = 2900;
-    private static final int SAMPLE_STEP = 580;
-    private static final int INNER_RADIUS = 950;
-
-    private static final int PAD_SEARCH_RADIUS = 320;
-    private static final int PAD_SEARCH_STEP = 32;
-    private static final int PAD_FOOTPRINT_RADIUS = 24;
-    private static final int PAD_FOOTPRINT_STEP = 12;
+    private static final int PAD_SEARCH_RADIUS = 288;
+    private static final int PAD_SEARCH_STEP = 72;
+    private static final int PAD_FOOTPRINT_RADIUS = 22;
     private static final int MAX_PAD_RELIEF = 8;
     private static final int HARD_MAX_PAD_Y = 145;
     private static final int PREFERRED_MAX_PAD_Y = 112;
-    private static final int PAD_CANDIDATES_TO_TRY = 8;
+    private static final int PAD_CANDIDATES_TO_TRY = 4;
+
+    // World creation must remain responsive even when another terrain mod makes getBaseHeight slow.
+    private static final long TIME_BUDGET_NANOS = 8_000_000_000L;
 
     private StarterLandSelector() {}
 
     public static BlockPos choose(ServerLevel level, BlockPos vanillaSpawn) {
+        long started = System.nanoTime();
+        long deadline = started + TIME_BUDGET_NANOS;
+
         ChunkGenerator generator = level.getChunkSource().getGenerator();
         RandomState randomState = level.getChunkSource().randomState();
         int seaLevel = generator.getSeaLevel();
 
-        Candidate vanilla = score(level, generator, randomState, seaLevel, vanillaSpawn.getX(), vanillaSpawn.getZ());
+        Candidate vanilla = score(level, generator, randomState, seaLevel, vanillaSpawn.getX(), vanillaSpawn.getZ(), deadline);
         List<Candidate> candidates = new ArrayList<>();
         candidates.add(vanilla);
 
+        outer:
         for (int radius : SEARCH_RADII) {
             int diagonal = (int) Math.round(radius / Math.sqrt(2.0D));
             int[][] offsets = {
@@ -61,25 +64,30 @@ public final class StarterLandSelector {
             };
 
             for (int[] offset : offsets) {
-                candidates.add(score(
+                if (expired(deadline)) break outer;
+                Candidate candidate = score(
                         level,
                         generator,
                         randomState,
                         seaLevel,
                         vanillaSpawn.getX() + offset[0],
-                        vanillaSpawn.getZ() + offset[1]
-                ));
+                        vanillaSpawn.getZ() + offset[1],
+                        deadline
+                );
+                if (candidate != null) candidates.add(candidate);
             }
         }
 
+        candidates.removeIf(candidate -> candidate == null || candidate.score() <= -9000.0D);
         candidates.sort(Comparator.comparingDouble(Candidate::score).reversed());
 
         Candidate chosen = null;
         BuildSite site = null;
+        BuildSite vanillaSite = null;
         int tried = 0;
+
         for (Candidate candidate : candidates) {
-            if (candidate.score() <= -9000.0D) continue;
-            if (tried++ >= PAD_CANDIDATES_TO_TRY) break;
+            if (expired(deadline) || tried++ >= PAD_CANDIDATES_TO_TRY) break;
 
             BuildSite candidateSite = findBuildSite(
                     level,
@@ -87,9 +95,11 @@ public final class StarterLandSelector {
                     randomState,
                     seaLevel,
                     candidate.blockX(),
-                    candidate.blockZ()
+                    candidate.blockZ(),
+                    deadline
             );
             if (candidateSite == null) continue;
+            if (candidate == vanilla) vanillaSite = candidateSite;
 
             double combined = candidate.score() + candidateSite.quality();
             if (chosen == null || combined > chosen.score() + site.quality()) {
@@ -98,24 +108,33 @@ public final class StarterLandSelector {
             }
         }
 
+        // If the budget was consumed before vanilla happened to be among the top candidates, do one
+        // cheap local pass only when time remains. Otherwise simply keep vanilla rather than stalling.
+        if (vanillaSite == null && !expired(deadline)) {
+            vanillaSite = findBuildSite(
+                    level,
+                    generator,
+                    randomState,
+                    seaLevel,
+                    vanilla.blockX(),
+                    vanilla.blockZ(),
+                    deadline
+            );
+        }
+
         if (chosen == null || site == null) {
+            long elapsedMs = (System.nanoTime() - started) / 1_000_000L;
             CozyCrazyZones.LOGGER.warn(
-                    "Land-rich starter selector could not find a naturally buildable pad; keeping vanilla spawn {}",
-                    vanillaSpawn
+                    "Starter land selector kept vanilla spawn {} after {} ms (time budget reached: {})",
+                    vanillaSpawn,
+                    elapsedMs,
+                    expired(deadline)
             );
             return vanillaSpawn;
         }
 
         // Do not relocate for a microscopic broad-geography improvement unless the vanilla spot is
         // itself a poor house pad. This keeps worlds feeling naturally seeded rather than overfit.
-        BuildSite vanillaSite = findBuildSite(
-                level,
-                generator,
-                randomState,
-                seaLevel,
-                vanilla.blockX(),
-                vanilla.blockZ()
-        );
         if (chosen != vanilla && vanillaSite != null) {
             double chosenCombined = chosen.score() + site.quality();
             double vanillaCombined = vanilla.score() + vanillaSite.quality();
@@ -126,9 +145,11 @@ public final class StarterLandSelector {
         }
 
         BlockPos safe = new BlockPos(site.blockX(), site.surfaceY(), site.blockZ());
+        long elapsedMs = (System.nanoTime() - started) / 1_000_000L;
         CozyCrazyZones.LOGGER.info(
-                "Starter land selector chose {} (land {}%, inner {}%, weakest cardinal {}%, relief {} blocks; house-pad relief {} blocks at Y={}; vanilla land {}% / inner {}% / weakest cardinal {}%)",
+                "Starter land selector chose {} in {} ms (land {}%, inner {}%, weakest cardinal {}%, relief {} blocks; house-pad relief {} blocks at Y={}; vanilla land {}% / inner {}% / weakest cardinal {}%)",
                 safe,
+                elapsedMs,
                 Math.round(chosen.landRatio() * 100.0D),
                 Math.round(chosen.innerLandRatio() * 100.0D),
                 Math.round(chosen.weakestCardinalLandRatio() * 100.0D),
@@ -142,66 +163,62 @@ public final class StarterLandSelector {
         return safe;
     }
 
+    @Nullable
     private static Candidate score(ServerLevel level,
                                    ChunkGenerator generator,
                                    RandomState randomState,
                                    int seaLevel,
                                    int centerX,
-                                   int centerZ) {
-        int centerFloor = generator.getBaseHeight(
-                centerX,
-                centerZ,
-                Heightmap.Types.OCEAN_FLOOR_WG,
-                level,
-                randomState
-        );
+                                   int centerZ,
+                                   long deadline) {
+        if (expired(deadline)) return null;
 
-        if (centerFloor <= seaLevel + 1) {
+        int centerSurface = surface(generator, randomState, level, centerX, centerZ);
+        if (centerSurface <= seaLevel + 1) {
             return new Candidate(centerX, centerZ, -10000.0D, 0.0D, 0.0D, 0.0D, 0.0D);
         }
 
-        double totalWeight = 0.0D;
-        double landWeight = 0.0D;
-        double innerWeight = 0.0D;
-        double innerLandWeight = 0.0D;
-        double heightSum = 0.0D;
-        double heightSqSum = 0.0D;
-        int landSamples = 0;
+        double totalWeight = 4.0D;
+        double landWeight = 4.0D;
+        double innerWeight = 4.0D;
+        double innerLandWeight = 4.0D;
+        double heightSum = centerSurface;
+        double heightSqSum = (double) centerSurface * centerSurface;
+        int landSamples = 1;
 
         double[] sectorTotal = new double[4];
         double[] sectorLand = new double[4];
 
-        for (int dz = -SAMPLE_RADIUS; dz <= SAMPLE_RADIUS; dz += SAMPLE_STEP) {
-            for (int dx = -SAMPLE_RADIUS; dx <= SAMPLE_RADIUS; dx += SAMPLE_STEP) {
-                double distance = Math.sqrt((double) dx * dx + (double) dz * dz);
-                if (distance > SAMPLE_RADIUS) continue;
+        for (int radius : SAMPLE_RING_RADII) {
+            int diagonal = (int) Math.round(radius / Math.sqrt(2.0D));
+            int[][] offsets = {
+                    { radius, 0 }, { -radius, 0 }, { 0, radius }, { 0, -radius },
+                    { diagonal, diagonal }, { diagonal, -diagonal },
+                    { -diagonal, diagonal }, { -diagonal, -diagonal }
+            };
 
-                double weight = distance <= 900.0D ? 3.0D : distance <= 1700.0D ? 1.75D : 1.0D;
-                int floor = generator.getBaseHeight(
-                        centerX + dx,
-                        centerZ + dz,
-                        Heightmap.Types.OCEAN_FLOOR_WG,
-                        level,
-                        randomState
-                );
-                boolean land = floor > seaLevel + 1;
+            double weight = radius <= 700 ? 3.0D : radius <= 1500 ? 1.75D : 1.0D;
+            for (int[] offset : offsets) {
+                if (expired(deadline)) return null;
+                int dx = offset[0];
+                int dz = offset[1];
+                int y = surface(generator, randomState, level, centerX + dx, centerZ + dz);
+                boolean land = y > seaLevel + 1;
 
                 totalWeight += weight;
                 if (land) {
                     landWeight += weight;
-                    heightSum += floor;
-                    heightSqSum += (double) floor * floor;
+                    heightSum += y;
+                    heightSqSum += (double) y * y;
                     landSamples++;
                 }
 
-                if (distance <= INNER_RADIUS) {
+                if (radius <= 950) {
                     innerWeight += weight;
                     if (land) innerLandWeight += weight;
                 }
 
-                // Ignore the ambiguous center and diagonal seam; every real direction still gets
-                // many samples across the transition/Hearthlands/near-Frontier shoulder.
-                if (distance >= 700.0D) {
+                if (radius >= 1000) {
                     int sector = sector(dx, dz);
                     sectorTotal[sector] += weight;
                     if (land) sectorLand[sector] += weight;
@@ -209,12 +226,11 @@ public final class StarterLandSelector {
             }
         }
 
-        double landRatio = totalWeight == 0.0D ? 0.0D : landWeight / totalWeight;
-        double innerLandRatio = innerWeight == 0.0D ? 0.0D : innerLandWeight / innerWeight;
+        double landRatio = landWeight / totalWeight;
+        double innerLandRatio = innerLandWeight / innerWeight;
         double weakestCardinal = 1.0D;
         for (int i = 0; i < sectorTotal.length; i++) {
-            if (sectorTotal[i] <= 0.0D) continue;
-            weakestCardinal = Math.min(weakestCardinal, sectorLand[i] / sectorTotal[i]);
+            if (sectorTotal[i] > 0.0D) weakestCardinal = Math.min(weakestCardinal, sectorLand[i] / sectorTotal[i]);
         }
 
         double relief = 0.0D;
@@ -223,9 +239,6 @@ public final class StarterLandSelector {
             relief = Math.sqrt(Math.max(0.0D, heightSqSum / landSamples - mean * mean));
         }
 
-        // Target a land-dominant starter country, not a waterless one. A coast, lakes and rivers
-        // are welcome. The cardinal term specifically prevents one entire direction from being the
-        // sacrificial ocean just because the other three directions scored well.
         double usefulLand = Math.min(0.90D, landRatio);
         double usefulInner = Math.min(0.94D, innerLandRatio);
         double usefulCardinal = Math.min(0.72D, weakestCardinal);
@@ -236,7 +249,7 @@ public final class StarterLandSelector {
         if (weakestCardinal < 0.46D) score -= (0.46D - weakestCardinal) * 480.0D;
 
         score += Math.min(8.0D, relief * 0.35D);
-        if (centerFloor > 125) score -= (centerFloor - 125) * 0.7D;
+        if (centerSurface > 125) score -= (centerSurface - 125) * 0.7D;
 
         return new Candidate(centerX, centerZ, score, landRatio, innerLandRatio, weakestCardinal, relief);
     }
@@ -252,23 +265,26 @@ public final class StarterLandSelector {
                                            RandomState randomState,
                                            int seaLevel,
                                            int centerX,
-                                           int centerZ) {
+                                           int centerZ,
+                                           long deadline) {
         BuildSite best = null;
 
         for (int dz = -PAD_SEARCH_RADIUS; dz <= PAD_SEARCH_RADIUS; dz += PAD_SEARCH_STEP) {
             for (int dx = -PAD_SEARCH_RADIUS; dx <= PAD_SEARCH_RADIUS; dx += PAD_SEARCH_STEP) {
+                if (expired(deadline)) return best;
                 if ((long) dx * dx + (long) dz * dz > (long) PAD_SEARCH_RADIUS * PAD_SEARCH_RADIUS) continue;
-                BuildSite site = scoreBuildSite(
+
+                BuildSite candidate = scoreBuildSite(
                         level,
                         generator,
                         randomState,
                         seaLevel,
                         centerX + dx,
                         centerZ + dz,
-                        Math.hypot(dx, dz)
+                        Math.hypot(dx, dz),
+                        deadline
                 );
-                if (site == null) continue;
-                if (best == null || site.quality() > best.quality()) best = site;
+                if (candidate != null && (best == null || candidate.quality() > best.quality())) best = candidate;
             }
         }
         return best;
@@ -281,51 +297,34 @@ public final class StarterLandSelector {
                                             int seaLevel,
                                             int blockX,
                                             int blockZ,
-                                            double offsetDistance) {
+                                            double offsetDistance,
+                                            long deadline) {
         int min = Integer.MAX_VALUE;
         int max = Integer.MIN_VALUE;
         double sum = 0.0D;
         int samples = 0;
+        int centerY = Integer.MIN_VALUE;
 
-        for (int dz = -PAD_FOOTPRINT_RADIUS; dz <= PAD_FOOTPRINT_RADIUS; dz += PAD_FOOTPRINT_STEP) {
-            for (int dx = -PAD_FOOTPRINT_RADIUS; dx <= PAD_FOOTPRINT_RADIUS; dx += PAD_FOOTPRINT_STEP) {
-                int x = blockX + dx;
-                int z = blockZ + dz;
-                int floor = generator.getBaseHeight(
-                        x,
-                        z,
-                        Heightmap.Types.OCEAN_FLOOR_WG,
-                        level,
-                        randomState
-                );
-                if (floor <= seaLevel + 1) return null;
+        // Nine samples cover a roughly 44x44 pad: center, sides and corners. This is enough to reject
+        // a steep Tectonic slope without turning spawn selection into thousands of full noise scans.
+        int[] footprint = {-PAD_FOOTPRINT_RADIUS, 0, PAD_FOOTPRINT_RADIUS};
+        for (int dz : footprint) {
+            for (int dx : footprint) {
+                if (expired(deadline)) return null;
+                int y = surface(generator, randomState, level, blockX + dx, blockZ + dz);
+                if (y <= seaLevel + 1) return null;
 
-                int surface = generator.getBaseHeight(
-                        x,
-                        z,
-                        Heightmap.Types.WORLD_SURFACE_WG,
-                        level,
-                        randomState
-                );
-                min = Math.min(min, surface);
-                max = Math.max(max, surface);
-                sum += surface;
+                if (dx == 0 && dz == 0) centerY = y;
+                min = Math.min(min, y);
+                max = Math.max(max, y);
+                sum += y;
                 samples++;
             }
         }
 
-        if (samples == 0) return null;
+        if (samples == 0 || centerY == Integer.MIN_VALUE) return null;
         int relief = max - min;
-        if (relief > MAX_PAD_RELIEF) return null;
-
-        int centerY = generator.getBaseHeight(
-                blockX,
-                blockZ,
-                Heightmap.Types.WORLD_SURFACE_WG,
-                level,
-                randomState
-        );
-        if (centerY > HARD_MAX_PAD_Y) return null;
+        if (relief > MAX_PAD_RELIEF || centerY > HARD_MAX_PAD_Y) return null;
 
         double mean = sum / samples;
         double quality = 45.0D - relief * 5.5D;
@@ -335,6 +334,18 @@ public final class StarterLandSelector {
         if (centerY < seaLevel + 4) quality -= (seaLevel + 4 - centerY) * 2.0D;
 
         return new BuildSite(blockX, blockZ, centerY, relief, quality);
+    }
+
+    private static int surface(ChunkGenerator generator,
+                               RandomState randomState,
+                               ServerLevel level,
+                               int x,
+                               int z) {
+        return generator.getBaseHeight(x, z, Heightmap.Types.WORLD_SURFACE_WG, level, randomState);
+    }
+
+    private static boolean expired(long deadline) {
+        return System.nanoTime() >= deadline;
     }
 
     private record Candidate(int blockX,
