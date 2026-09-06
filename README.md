@@ -15,10 +15,10 @@ Distance is horizontal Euclidean distance from the Overworld's actual shared spa
 
 **Cardinal ecology**
 
-- **North** — frozen / alpine
-- **East** — lush / jungle / overgrowth
-- **South** — warm / savanna / desert / badlands
-- **West** — temperate / autumn / redwood / old forest
+- **North / Frostmarch** — frozen / alpine
+- **East / Greenveil** — lush / jungle / overgrowth
+- **South / Sunscar** — warm / savanna / desert / badlands
+- **West / Harvestwood** — temperate / autumn / pumpkin / redwood / old forest
 
 Cardinal borders are large seed-dependent warped sectors, not straight X=0/Z=0 quadrant seams.
 
@@ -27,27 +27,45 @@ Cardinal borders are large seed-dependent warped sectors, not straight X=0/Z=0 q
 Hearthlands remains one radial danger tier, but its ecological identity ramps in deliberately:
 
 - **0–~700:** Shared Core — ordinary/common temperate starter countryside; no strong cardinal identity.
-- **~700–1,200:** Cardinal Transition — directional ecology emerges organically.
-- **~1,200–2,500:** Cardinal Hearthlands Proper — clearly Northern/Eastern/Southern/Western while remaining Tier 1.
+- **~700–1,200:** Cardinal Transition — directional ecology emerges organically. Generic forest/plains are increasingly replaced during the latter half of this band.
+- **~1,200–2,500:** Cardinal Hearthlands Proper — clearly Frostmarch/Greenveil/Sunscar/Harvestwood while remaining Tier 1.
 - **2,500+:** Frontier — regional identity is established and danger escalates.
 
-See `docs/GEOGRAPHY.md` for the authoritative geography contract.
+Warped macro borders retain a narrow neutral/common seam so transitions remain natural rather than becoming hard biome walls.
 
-## v0.2 scope
+### Regional finals
+
+Dread Reaches remain open-ended exploration territory, but a regional **final destination is not allowed to drift infinitely outward**. The default final-destination expedition belt is:
+
+- inner edge: **9,000** blocks (Dread Reaches)
+- outer edge: **15,000** blocks (`finalDestinationMaxRadius`, configurable)
+
+Current enforced finals:
+
+- **North / Frostmarch:** Aquamirae Ice-Maze territory and its registered Maze structures
+- **South / Sunscar:** Cataclysm Cursed Pyramid / Ancient Remnant
+
+Aquamirae is handled at both layers: its registered structures are distance/cardinal gated, while frozen/deep-frozen ocean is reserved as Ice-Maze biome territory only inside the legal northern final belt.
+
+## v0.3.8 scope
 
 - authoritative `CozyZonesApi.regionalCellAt(...)` classifier
 - radial danger + cardinal macro-region + influence band
 - seed-dependent warped macro-region borders
+- strict second-pass cardinal biome identity for COMMON forest/plains residue
 - distance/cardinal-gated structure generation
+- finite final-destination expedition belt
+- Aquamirae Ice-Maze biome/feature territory gating
 - **NATURAL** mob regionalization only; raid/event/spawner/summon/scripted spawns remain exempt
 - region-entry title/subtitle/sound
 - persistent atlas-aware HUD showing shared core, transition, or full regional cell
+- starter Atlas / village-route support
 - `/cozyzones where` debug output for both geography axes
-- registry dump including structures, entities, **biomes, biome tags, and final natural spawn pools**
+- registry dump including structures, entities, biomes, biome tags, and final natural spawn pools
 - public geography/rule API for future maps, rumors, bounties and quests
-- Cataclysm world-content firewall: Cursed Pyramid allowed only in Southern Dread Reaches; unrelated Cataclysm world structures and NATURAL spawns suppressed
+- Cataclysm world-content firewall: Cursed Pyramid is the retained Cataclysm Overworld destination; unrelated Cataclysm world structures and NATURAL spawns are suppressed
 
-Quest logic and the final biome-remapping implementation are deliberately out of scope for this revision.
+Quest logic remains deliberately separate from this worldgen substrate.
 
 ## Build target
 
@@ -60,11 +78,19 @@ GitHub Actions builds the reobfuscated mod jar and packages a versioned `ROOT_OV
 
 ## Testing rule
 
-Do not treat a green compile as proof that worldgen is correct. Test fresh chunks and run:
+Do not treat a green compile as proof that worldgen is correct. Test a fresh world/fresh chunks and run:
 
 ```
 /cozyzones where
 /cozyzones dump_registry
 ```
 
-For v0.2, especially sample around ~0, ~900, ~1,400, ~2,500, ~5,500, and ~9,000 blocks in multiple cardinal directions. The registry dump is written to `logs/cozycrazyzones-registry-dump.txt`; its new biome/spawn section is the input for the next biome-regionality implementation pass.
+For v0.3.8, sample ~500, ~900, ~1,400, ~2,500, ~5,500, ~9,000, ~12,000 and ~15,500 blocks in all four cardinal regions. In particular verify:
+
+- generic Forest/Plains do not dominate established cardinal country;
+- warped cardinal borders still blend rather than forming hard straight seams;
+- no Aquamirae Ice-Maze territory exists before Dread or beyond the final belt;
+- Cursed Pyramid cannot generate beyond the final belt;
+- North Dread still contains enough ocean inside the belt for Aquamirae to generate naturally.
+
+The registry dump is written to `logs/cozycrazyzones-registry-dump.txt`.
