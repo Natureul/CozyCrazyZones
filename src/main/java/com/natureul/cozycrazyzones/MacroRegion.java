@@ -14,7 +14,7 @@ public enum MacroRegion {
     NORTH("north", "Frostmarch", "Frostmarch", ChatFormatting.AQUA),
     EAST("east", "Greenveil", "Greenveil", ChatFormatting.DARK_GREEN),
     SOUTH("south", "Sunscar", "Sunscar", ChatFormatting.GOLD),
-    WEST("west", "Harvestlands", "Harvest", ChatFormatting.DARK_RED);
+    WEST("west", "Harvestwood", "Harvestwood", ChatFormatting.DARK_RED);
 
     private final String id;
     private final String displayName;
