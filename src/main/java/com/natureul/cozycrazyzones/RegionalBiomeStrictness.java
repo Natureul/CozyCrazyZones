@@ -26,8 +26,6 @@ public final class RegionalBiomeStrictness {
         BiomeRegionality.Profile originalProfile = BiomeRegionality.profile(original).orElse(null);
         if (targetProfile == null) return target;
 
-        // Oceans/rivers/coasts have their own regional handling. Rare special biomes are allowed to
-        // remain rare landmarks instead of being erased merely for cardinal neatness.
         BiomeRegionality.Shape shape = targetProfile.shape();
         if (shape == BiomeRegionality.Shape.OCEAN
                 || shape == BiomeRegionality.Shape.RIVER
@@ -36,22 +34,14 @@ public final class RegionalBiomeStrictness {
             return target;
         }
 
-        // Only clean up generic/common residue here. The primary remapper remains responsible for
-        // climate-incompatible regional biomes such as jungle in Frostmarch or snow in Sunscar.
         if (targetProfile.affinity() != BiomeRegionality.Affinity.COMMON) return target;
-
-        // Preserve a genuinely narrow organic seam at warped macro borders. The old effective seam
-        // was much wider because COMMON biomes were also exempted in the normal transition logic.
         if (cell.macroBoundaryStrength() < 0.30D) return target;
 
-        if (cell.influenceBand() == RegionalInfluenceBand.CARDINAL_TRANSITION) {
-            // The first part of the 700-1200ish transition is still ordinary country. By the latter
-            // half, however, generic forest/plains should visibly yield to the cardinal ecology.
-            if (cell.regionalStrength() < 0.34D) return target;
+        if (cell.influenceBand() == RegionalInfluenceBand.CARDINAL_TRANSITION
+                && cell.regionalStrength() < 0.34D) {
+            return target;
         }
 
-        // Use the original shape if a conservative remap flattened an unusual source into generic
-        // OPEN terrain. This preserves broad mountain/wetland character where practical.
         if (originalProfile != null
                 && originalProfile.shape() != BiomeRegionality.Shape.OCEAN
                 && originalProfile.shape() != BiomeRegionality.Shape.RIVER
@@ -121,7 +111,7 @@ public final class RegionalBiomeStrictness {
     private static ResourceLocation greenveil(int stage, BiomeRegionality.Shape shape, long seed, int x, int z) {
         if (stage == 1) {
             return switch (shape) {
-                case FOREST -> choose(seed, x, z, 0x21A2L, "biomesoplenty:jacaranda_glade", "biomesoplenty:orchard", "biomesoplenty:rainforest");
+                case FOREST -> choose(seed, x, z, 0x21A2L, "biomesoplenty:jacaranda_glade", "biomesoplenty:orchard");
                 case WETLAND -> choose(seed, x, z, 0x21A3L, "biomesoplenty:marsh", "minecraft:swamp", "biomesoplenty:floodplain");
                 case MOUNTAIN -> choose(seed, x, z, 0x21A4L, "biomesoplenty:jade_cliffs", "biomesoplenty:rocky_rainforest", "minecraft:windswept_forest");
                 default -> choose(seed, x, z, 0x21A5L, "biomesoplenty:overgrown_greens", "biomesoplenty:forested_field", "biomesoplenty:jacaranda_glade");
