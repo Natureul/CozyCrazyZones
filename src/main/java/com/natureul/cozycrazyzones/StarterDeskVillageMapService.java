@@ -37,14 +37,15 @@ import java.util.concurrent.ConcurrentMap;
  *
  * trackingPosition is deliberately disabled on this map. That prevents the item frame itself from
  * being serialized as Minecraft's automatic "Frame" map decoration—the stray marker seen in the
- * earlier playtest.
+ * earlier playtest. A client-only render hook makes this same filled-map stack look like an ordinary
+ * unused map while it remains framed on the desk; removing it reveals the real map and its markers.
  */
 public final class StarterDeskVillageMapService {
     private static final ResourceLocation ATLAS_ID = new ResourceLocation("map_atlases", "atlas");
 
     private static final String GUIDE_TAG = "CozyCrazyZonesDeskVillageGuide";
     private static final String GUIDE_VERSION_TAG = "CozyCrazyZonesDeskVillageGuideVersion";
-    private static final int GUIDE_VERSION = 2;
+    private static final int GUIDE_VERSION = 3;
 
     private static final int RETRY_INTERVAL_TICKS = 20;
     private static final int MAX_ATTEMPTS = 45;
@@ -115,7 +116,7 @@ public final class StarterDeskVillageMapService {
                 level.getChunkSource().getGeneratorState(),
                 level.registryAccess()
         );
-        if (targets.isEmpty()) return false;
+        if (targets.size() != MacroRegion.values().length) return false;
 
         ItemStack existing = frame.getItem();
         CompoundTag existingTag = existing.getTag();
@@ -148,10 +149,11 @@ public final class StarterDeskVillageMapService {
 
             BlockPos realVillage = new BlockPos(target.getMiddleBlockX(), spawn.getY(), target.getMiddleBlockZ());
             BlockPos overview = overviewMarker(spawn, realVillage);
+            String villageName = HearthVillageNames.nameFor(region, level.getSeed(), target);
             MapItemSavedData.addTargetDecoration(
                     guide,
                     overview,
-                    region.displayName() + " Village",
+                    villageName,
                     MapDecoration.Type.TARGET_X
             );
         }
@@ -171,13 +173,15 @@ public final class StarterDeskVillageMapService {
             ChunkPos target = targets.get(region);
             if (target == null) continue;
             if (!summary.isEmpty()) summary.append("; ");
-            summary.append(region.displayName())
-                    .append(' ')
+            summary.append(HearthVillageNames.nameFor(region, level.getSeed(), target))
+                    .append(" [")
+                    .append(region.displayName())
+                    .append("] ")
                     .append(target.getMiddleBlockX())
                     .append(',')
                     .append(target.getMiddleBlockZ());
         }
-        CozyCrazyZones.LOGGER.info("Starter-house Hearthlands map prepared with real village anchors: {}", summary);
+        CozyCrazyZones.LOGGER.info("Starter-house Hearthlands map prepared with four real village anchors: {}", summary);
         return true;
     }
 
