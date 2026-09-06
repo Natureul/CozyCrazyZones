@@ -47,7 +47,7 @@ Current enforced finals:
 
 Aquamirae is handled at both layers: its registered structures are distance/cardinal gated, while frozen/deep-frozen ocean is reserved as Ice-Maze biome territory only inside the legal northern final belt.
 
-## v0.3.8 scope
+## Current scope (v0.3.11)
 
 - authoritative `CozyZonesApi.regionalCellAt(...)` classifier
 - radial danger + cardinal macro-region + influence band
@@ -59,11 +59,14 @@ Aquamirae is handled at both layers: its registered structures are distance/card
 - **NATURAL** mob regionalization only; raid/event/spawner/summon/scripted spawns remain exempt
 - region-entry title/subtitle/sound
 - persistent atlas-aware HUD showing shared core, transition, or full regional cell
-- starter Atlas / village-route support
+- starter Atlas plus one real guaranteed Hearthlands village anchor in each cardinal region
+- real filled starter-house Hearthlands overview map; automatic item-frame map marker disabled
+- starter-land selection biased toward a usable natural continent, including a stronger land-availability preference for early Frostmarch
 - `/cozyzones where` debug output for both geography axes
 - registry dump including structures, entities, biomes, biome tags, and final natural spawn pools
 - public geography/rule API for future maps, rumors, bounties and quests
 - Cataclysm world-content firewall: Cursed Pyramid is the retained Cataclysm Overworld destination; unrelated Cataclysm world structures and NATURAL spawns are suppressed
+- root-overlay integration files, including a client override that suppresses Alex's Mobs Interaction's repeated Farseer login reminder without disabling the Farseer visual feature itself
 
 Quest logic remains deliberately separate from this worldgen substrate.
 
@@ -74,7 +77,7 @@ Quest logic remains deliberately separate from this worldgen substrate.
 - Java 17
 - Gradle 8.8
 
-GitHub Actions builds the reobfuscated mod jar and packages a versioned `ROOT_OVERLAY` artifact containing `mods/CozyCrazyZones-<version>.jar`.
+GitHub Actions builds the reobfuscated mod jar and packages a versioned `ROOT_OVERLAY` artifact. The overlay contains the CozyCrazyZones jar plus any pack-integration files under `root_overlay/`.
 
 ## Testing rule
 
@@ -85,14 +88,16 @@ Do not treat a green compile as proof that worldgen is correct. Test a fresh wor
 /cozyzones dump_registry
 ```
 
-For v0.3.8, sample ~500, ~900, ~1,400, ~2,500, ~5,500, ~9,000, ~12,000 and ~15,500 blocks in all four cardinal regions. In particular verify:
+Sample ~500, ~900, ~1,400, ~2,500, ~5,500, ~9,000, ~12,000 and ~15,500 blocks in all four cardinal regions. In particular verify:
 
 - generic Forest/Plains do not dominate established cardinal country;
 - warped cardinal borders still blend rather than forming hard straight seams;
+- all four Hearthlands regional village anchors exist on usable land;
+- Frostmarch is no longer routinely dominated by a giant early ocean;
 - no Aquamirae Ice-Maze territory exists before Dread or beyond the final belt;
 - Cursed Pyramid cannot generate beyond the final belt;
 - North Dread still contains enough ocean inside the belt for Aquamirae to generate naturally.
 
 The registry dump is written to `logs/cozycrazyzones-registry-dump.txt`.
 
-Current CI verifies compilation and root-overlay packaging. Actual seed distribution still requires an in-game fresh-world pass before the 9k–15k final belt should be treated as permanently tuned.
+Current CI verifies compilation and root-overlay packaging. Actual seed distribution still requires an in-game fresh-world pass before the 9k–15k final belt and regional biome strictness should be treated as permanently tuned.
