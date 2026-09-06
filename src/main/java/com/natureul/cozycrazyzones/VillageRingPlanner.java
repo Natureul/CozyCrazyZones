@@ -19,19 +19,19 @@ import javax.annotation.Nullable;
 import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Plans the starter Hearthlands settlement ring on Minecraft's real village-placement lattice.
+ * Plans the starter Hearthlands settlement ring.
  *
- * The first implementation reserved one nearby village. The authored start now needs a readable
- * four-direction world: one real village anchor in Frostmarch, Greenveil, Sunscar and Harvestwood.
- * Every target remains outside the 1,000-block starter sanctuary and inside the 2,500-block
- * Hearthlands boundary. The compact passes are preferred; a wider final pass exists mainly for
- * awkward coastal seeds (especially northern ones) where suitable village land is scarce.
+ * The authored start requires one real village anchor in each cardinal ecology. Normal vanilla
+ * village-lattice candidates are always preferred. If a seed does not expose a suitable lattice
+ * candidate in one direction, the planner synthesizes an off-lattice reserved chunk on suitable
+ * Hearthlands land instead; ChunkGeneratorMixin already owns the corresponding forced-village
+ * generation path. In other words, a bad coastal or biome seed may change exactly where a starter
+ * village sits, but it may not delete one of the four authored starter settlements.
  */
 public final class VillageRingPlanner {
     public static final double MIN_VILLAGE_START_DISTANCE = 1000.0D;
@@ -43,10 +43,7 @@ public final class VillageRingPlanner {
 
     private VillageRingPlanner() {}
 
-    /**
-     * Exact reserved village targets keyed by their intended macro-region. The map may be partial
-     * only if a very unusual world exposes no valid village-lattice land in one direction.
-     */
+    /** Exact reserved village targets keyed by their intended macro-region. */
     public static Map<MacroRegion, ChunkPos> targetsFor(ServerLevel level,
                                                          ChunkGenerator generator,
                                                          ChunkGeneratorStructureState structureState,
@@ -101,29 +98,31 @@ public final class VillageRingPlanner {
                                            ChunkGenerator generator,
                                            ChunkGeneratorStructureState structureState,
                                            RegistryAccess registryAccess) {
-        StructureSet villageSet = registryAccess.registryOrThrow(Registries.STRUCTURE_SET).get(VILLAGE_SET);
-        if (villageSet == null || !(villageSet.placement() instanceof RandomSpreadStructurePlacement placement)) {
-            CozyCrazyZones.LOGGER.warn("Could not resolve minecraft:villages RandomSpread placement; Hearth village guarantees disabled");
-            return VillagePlan.EMPTY;
-        }
-
         EnumMap<MacroRegion, ChunkPos> targets = new EnumMap<>(MacroRegion.class);
 
-        // Prefer a tight, clearly established ring around the start. Later passes only fill regions
-        // still missing a village; they never replace a good compact target with a farther one.
-        fillMissing(spawn, generator, structureState, placement, targets, 1050.0D, 1400.0D, 0.55D);
-        fillMissing(spawn, generator, structureState, placement, targets, 1000.0D, 1750.0D, 0.38D);
-        fillMissing(spawn, generator, structureState, placement, targets, 1000.0D, MAX_HEARTH_VILLAGE_DISTANCE, 0.20D);
-
-        if (targets.isEmpty()) {
-            CozyCrazyZones.LOGGER.warn("No suitable Hearthlands village candidates found between 1000 and {} blocks", Math.round(MAX_HEARTH_VILLAGE_DISTANCE));
-            return VillagePlan.EMPTY;
+        StructureSet villageSet = registryAccess.registryOrThrow(Registries.STRUCTURE_SET).get(VILLAGE_SET);
+        if (villageSet != null && villageSet.placement() instanceof RandomSpreadStructurePlacement placement) {
+            // Prefer a tight, clearly established ring. Later passes only fill missing regions;
+            // they never replace a good compact target with a farther one.
+            fillMissing(spawn, generator, structureState, placement, targets, 1050.0D, 1400.0D, 0.55D);
+            fillMissing(spawn, generator, structureState, placement, targets, 1000.0D, 1750.0D, 0.38D);
+            fillMissing(spawn, generator, structureState, placement, targets, 1000.0D, MAX_HEARTH_VILLAGE_DISTANCE, 0.20D);
+        } else {
+            CozyCrazyZones.LOGGER.warn(
+                    "Could not resolve minecraft:villages RandomSpread placement; using synthesized Hearthlands village anchors"
+            );
         }
+
+        // This is the hard authored-world invariant. A missing vanilla-lattice candidate is not a
+        // reason to omit a cardinal starter village or to make the Atlas survey all-or-nothing.
+        fillGuaranteedFallbacks(spawn, generator, structureState, targets);
 
         for (MacroRegion region : MacroRegion.values()) {
             ChunkPos target = targets.get(region);
             if (target == null) {
-                CozyCrazyZones.LOGGER.warn("No suitable {} Hearthlands village candidate was found", region.displayName());
+                // The exhaustive regional scan plus deterministic axis fallback should make this
+                // unreachable. Keep the error loud if a future geography rewrite violates it.
+                CozyCrazyZones.LOGGER.error("Hearthlands village invariant failed for {}", region.displayName());
                 continue;
             }
             CozyCrazyZones.LOGGER.info(
@@ -158,7 +157,7 @@ public final class VillageRingPlanner {
         EnumMap<MacroRegion, Candidate> best = new EnumMap<>(MacroRegion.class);
 
         // +/-8 placement cells comfortably covers the entire 2,250-block Hearthlands search even
-        // with the vanilla village spacing, while remaining a tiny one-time world-start operation.
+        // with vanilla village spacing, while remaining a tiny one-time world-start operation.
         for (int gx = -8; gx <= 8; gx++) {
             for (int gz = -8; gz <= 8; gz++) {
                 int probeChunkX = spawnChunkX + spacing * gx;
@@ -194,6 +193,102 @@ public final class VillageRingPlanner {
         }
 
         best.forEach((region, candidate) -> targets.putIfAbsent(region, candidate.chunk()));
+    }
+
+    /**
+     * Fills every region still missing after the vanilla lattice scan. The first fallback pass still
+     * insists on established, village-friendly land. A second pass relaxes the influence-band test
+     * while retaining land suitability. The final scan accepts any Hearthlands cell in that macro
+     * region so the authored four-marker contract cannot disappear on pathological all-water seeds.
+     */
+    private static void fillGuaranteedFallbacks(BlockPos spawn,
+                                                ChunkGenerator generator,
+                                                ChunkGeneratorStructureState structureState,
+                                                EnumMap<MacroRegion, ChunkPos> targets) {
+        if (targets.size() == MacroRegion.values().length) return;
+
+        for (MacroRegion region : MacroRegion.values()) {
+            if (targets.containsKey(region)) continue;
+
+            Candidate fallback = findFallback(
+                    spawn, generator, structureState, region, true, true
+            );
+            if (fallback == null) {
+                fallback = findFallback(
+                        spawn, generator, structureState, region, false, true
+                );
+            }
+            if (fallback == null) {
+                fallback = findFallback(
+                        spawn, generator, structureState, region, false, false
+                );
+            }
+
+            ChunkPos target = fallback != null
+                    ? fallback.chunk()
+                    : deterministicAxisFallback(spawn, region);
+            targets.put(region, target);
+
+            CozyCrazyZones.LOGGER.warn(
+                    "No suitable vanilla village-lattice candidate for {}; synthesized guaranteed Hearthlands village anchor at chunk {},{}",
+                    region.displayName(), target.x, target.z
+            );
+        }
+    }
+
+    @Nullable
+    private static Candidate findFallback(BlockPos spawn,
+                                          ChunkGenerator generator,
+                                          ChunkGeneratorStructureState structureState,
+                                          MacroRegion wantedRegion,
+                                          boolean requireEstablished,
+                                          boolean requireVillageLand) {
+        int spawnChunkX = SectionPos.blockToSectionCoord(spawn.getX());
+        int spawnChunkZ = SectionPos.blockToSectionCoord(spawn.getZ());
+        int maxChunkRadius = (int) Math.ceil(MAX_HEARTH_VILLAGE_DISTANCE / 16.0D) + 1;
+        Candidate best = null;
+
+        // Three-chunk stride is dense enough that a normal biome patch cannot fall through the
+        // search, but still keeps the one-time emergency scan modest even on a difficult seed.
+        for (int dx = -maxChunkRadius; dx <= maxChunkRadius; dx += 3) {
+            for (int dz = -maxChunkRadius; dz <= maxChunkRadius; dz += 3) {
+                ChunkPos candidate = new ChunkPos(spawnChunkX + dx, spawnChunkZ + dz);
+                double distance = distanceFromSpawn(spawn, candidate);
+                if (distance < MIN_VILLAGE_START_DISTANCE || distance > MAX_HEARTH_VILLAGE_DISTANCE) continue;
+
+                int blockX = candidate.getMiddleBlockX();
+                int blockZ = candidate.getMiddleBlockZ();
+                RegionalCell cell = WorldGeographyContext.cellAt(blockX, blockZ);
+                if (cell.radialZone() != Region.HEARTHLANDS) continue;
+                if (cell.macroRegion() != wantedRegion) continue;
+                if (requireEstablished && cell.influenceBand() != RegionalInfluenceBand.ESTABLISHED) continue;
+                if (requireVillageLand && !looksLikeVillageLand(generator, structureState, blockX, blockZ)) continue;
+
+                double jitter = (mix64(structureState.getLevelSeed() ^ candidate.toLong()) >>> 11) * 0x1.0p-53;
+                double boundaryPenalty = (1.0D - cell.macroBoundaryStrength()) * 120.0D;
+                double bandPenalty = cell.influenceBand() == RegionalInfluenceBand.ESTABLISHED ? 0.0D : 180.0D;
+                double score = Math.abs(distance - IDEAL_DISTANCE) + boundaryPenalty + bandPenalty + jitter * 8.0D;
+                if (best == null || score < best.score()) best = new Candidate(candidate, score);
+            }
+        }
+        return best;
+    }
+
+    /** Absolute last-resort deterministic coordinate. Normally unreachable after findFallback. */
+    private static ChunkPos deterministicAxisFallback(BlockPos spawn, MacroRegion region) {
+        int radius = 1500;
+        int blockX = spawn.getX();
+        int blockZ = spawn.getZ();
+        switch (region) {
+            case NORTH -> blockZ -= radius;
+            case EAST -> blockX += radius;
+            case SOUTH -> blockZ += radius;
+            case WEST -> blockX -= radius;
+        }
+        return new ChunkPos(
+                SectionPos.blockToSectionCoord(blockX),
+                SectionPos.blockToSectionCoord(blockZ)
+        );
     }
 
     private static boolean looksLikeVillageLand(ChunkGenerator generator,

@@ -1,6 +1,7 @@
 package com.natureul.cozycrazyzones.mixin;
 
 import com.natureul.cozycrazyzones.MacroRegion;
+import com.natureul.cozycrazyzones.Region;
 import com.natureul.cozycrazyzones.RegionalCell;
 import com.natureul.cozycrazyzones.RegionalInfluenceBand;
 import com.natureul.cozycrazyzones.WorldGeographyContext;
@@ -17,9 +18,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Aspen Glade is a Harvestwood/autumn biome, never neutral starter countryside.
- * It is legal only once the player is in established WEST country. Provisional spawn search,
- * Shared Core, the entire cardinal transition band and every other macro-region replace it.
+ * Aspen Glade is an outer Harvestwood/autumn biome, never Hearthlands countryside.
+ * It is legal only outside the Hearthlands in established WEST country. Provisional spawn search,
+ * all Hearthlands cells, the cardinal transition band and every other macro-region replace it.
  */
 @Mixin(value = MultiNoiseBiomeSource.class, priority = 50)
 public abstract class AspenBiomeGuardMixin {
@@ -48,6 +49,7 @@ public abstract class AspenBiomeGuardMixin {
         RegionalCell cell = WorldGeographyContext.cellAt(blockX, blockZ);
 
         boolean legalHarvestwoodAspen = !WorldGeographyContext.provisionalAnchor()
+                && cell.radialZone() != Region.HEARTHLANDS
                 && cell.macroRegion() == MacroRegion.WEST
                 && cell.influenceBand() == RegionalInfluenceBand.ESTABLISHED
                 && cell.macroBoundaryStrength() >= 0.42D;
@@ -55,6 +57,7 @@ public abstract class AspenBiomeGuardMixin {
 
         Holder<Biome> replacement;
         if (WorldGeographyContext.provisionalAnchor()
+                || cell.radialZone() == Region.HEARTHLANDS
                 || cell.influenceBand() != RegionalInfluenceBand.ESTABLISHED
                 || cell.macroBoundaryStrength() < 0.42D) {
             replacement = cozyzones$firstAvailable(

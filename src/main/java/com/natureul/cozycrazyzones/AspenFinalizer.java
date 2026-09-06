@@ -14,10 +14,10 @@ import java.util.Map;
 /**
  * Last-line Aspen Glade guard at the actual chunk palette.
  *
- * Source-level guards should already prevent illegal Aspen. This finalizer exists because the
- * starter screenshots proved that one upstream worldgen path could still leak it. The fast path is
- * only sixteen surface-palette reads per generated chunk; a second palette fill occurs only when
- * Aspen is actually present.
+ * Aspen is never legal anywhere in the Hearthlands. Outside the Hearthlands it is a Harvestwood
+ * biome and is legal only in established WEST country. Source-level guards should already enforce
+ * this; the finalizer remains as defense in depth against another worldgen path writing Aspen into
+ * the completed chunk palette.
  */
 public final class AspenFinalizer {
     private static final ResourceLocation ASPEN = id("biomesoplenty:aspen_glade");
@@ -41,6 +41,7 @@ public final class AspenFinalizer {
             int blockZ = QuartPos.toBlock(quartZ);
             RegionalCell cell = WorldGeographyContext.cellAt(blockX, blockZ);
             boolean legal = !WorldGeographyContext.provisionalAnchor()
+                    && cell.radialZone() != Region.HEARTHLANDS
                     && cell.macroRegion() == MacroRegion.WEST
                     && cell.influenceBand() == RegionalInfluenceBand.ESTABLISHED
                     && cell.macroBoundaryStrength() >= 0.42D;
@@ -48,6 +49,7 @@ public final class AspenFinalizer {
 
             ResourceLocation target;
             if (WorldGeographyContext.provisionalAnchor()
+                    || cell.radialZone() == Region.HEARTHLANDS
                     || cell.influenceBand() != RegionalInfluenceBand.ESTABLISHED
                     || cell.macroBoundaryStrength() < 0.42D) {
                 target = firstAvailable(lookup,
