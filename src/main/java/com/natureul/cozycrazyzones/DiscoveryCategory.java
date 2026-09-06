@@ -1,36 +1,45 @@
 package com.natureul.cozycrazyzones;
 
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.saveddata.maps.MapDecoration;
 
-/**
- * Semantic categories for things the player can discover and record on the Atlas.
- *
- * v0.3.17 intentionally activates villages first. Keeping the map marker id here means later
- * dungeon/temple/ruin/boss icon work can be added without rewriting discovery persistence.
- */
+/** Semantic categories for named places recorded on the player's Atlas. */
 public enum DiscoveryCategory {
-    VILLAGE("Village", "map_atlases:pin"),
-    DUNGEON("Dungeon", "map_atlases:pin"),
-    TEMPLE("Temple", "map_atlases:pin"),
-    RUIN("Ruin", "map_atlases:pin"),
-    TOWER("Tower", "map_atlases:pin"),
-    CAMP("Camp", "map_atlases:pin"),
-    BOSS("Boss", "map_atlases:pin"),
-    LANDMARK("Landmark", "map_atlases:pin");
+    VILLAGE("Settlement", MapDecoration.Type.PLAINS_VILLAGE),
+    DUNGEON("Dungeon", MapDecoration.Type.RED_X),
+    TEMPLE("Temple", MapDecoration.Type.JUNGLE_TEMPLE),
+    SHRINE("Shrine", MapDecoration.Type.BANNER_LIGHT_BLUE),
+    RUIN("Ruin", MapDecoration.Type.TARGET_X),
+    TOWER("Tower", MapDecoration.Type.MANSION),
+    FORTRESS("Fortress", MapDecoration.Type.BANNER_BLACK),
+    CAMP("Camp", MapDecoration.Type.BANNER_ORANGE),
+    MINE("Mine", MapDecoration.Type.BANNER_GRAY),
+    SHIP("Ship", MapDecoration.Type.BANNER_CYAN),
+    HOUSE("Homestead", MapDecoration.Type.BANNER_YELLOW),
+    PORTAL("Portal", MapDecoration.Type.BANNER_PURPLE),
+    BOSS("Boss Site", MapDecoration.Type.BANNER_RED),
+    LANDMARK("Landmark", MapDecoration.Type.BLUE_MARKER);
+
+    private static final ResourceLocation FALLBACK_PIN = new ResourceLocation("map_atlases", "pin");
 
     private final String displayName;
-    private final ResourceLocation atlasMarkerId;
+    private final MapDecoration.Type defaultDecorationType;
 
-    DiscoveryCategory(String displayName, String atlasMarkerId) {
+    DiscoveryCategory(String displayName, MapDecoration.Type defaultDecorationType) {
         this.displayName = displayName;
-        this.atlasMarkerId = new ResourceLocation(atlasMarkerId);
+        this.defaultDecorationType = defaultDecorationType;
     }
 
     public String displayName() {
         return displayName;
     }
 
+    public MapDecoration.Type defaultDecorationType() {
+        return defaultDecorationType;
+    }
+
+    /** Kept for Map Atlases/Moonlight compatibility fallbacks. */
     public ResourceLocation atlasMarkerId() {
-        return atlasMarkerId;
+        return FALLBACK_PIN;
     }
 }
