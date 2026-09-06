@@ -9,7 +9,8 @@
     "StructureManagerAccessor",
     "MapItemSavedDataAccessor",
     "NoiseBasedChunkGeneratorMixin",
-    "MinecraftServerMixin"
+    "MinecraftServerMixin",
+    "AspenBiomeGuardMixin"
   ],
   "injectors": {
     "defaultRequire": 1
