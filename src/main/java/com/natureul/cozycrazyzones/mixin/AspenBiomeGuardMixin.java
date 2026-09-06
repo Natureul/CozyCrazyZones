@@ -4,6 +4,7 @@ import com.natureul.cozycrazyzones.MacroRegion;
 import com.natureul.cozycrazyzones.Region;
 import com.natureul.cozycrazyzones.RegionalCell;
 import com.natureul.cozycrazyzones.RegionalInfluenceBand;
+import com.natureul.cozycrazyzones.SharedCoreBiomePolicy;
 import com.natureul.cozycrazyzones.WorldGeographyContext;
 import net.minecraft.core.Holder;
 import net.minecraft.core.QuartPos;
@@ -18,9 +19,11 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Aspen Glade is an outer Harvestwood/autumn biome, never Hearthlands countryside.
- * It is legal only outside the Hearthlands in established WEST country. Provisional spawn search,
- * all Hearthlands cells, the cardinal transition band and every other macro-region replace it.
+ * Final source-level guard for two worldgen contracts:
+ *  - Aspen Glade is outer Harvestwood/autumn country, never Hearthlands countryside.
+ *  - The immediate shared Hearthlands may not become enormous bare BOP grassland/prairie belts.
+ *
+ * Priority 50 intentionally runs after the broader regional remapper so this sees its final answer.
  */
 @Mixin(value = MultiNoiseBiomeSource.class, priority = 50)
 public abstract class AspenBiomeGuardMixin {
@@ -32,21 +35,44 @@ public abstract class AspenBiomeGuardMixin {
             at = @At("RETURN"),
             cancellable = true
     )
-    private void cozyzones$keepAspenAutumnal(int quartX,
-                                             int quartY,
-                                             int quartZ,
-                                             Climate.Sampler sampler,
-                                             CallbackInfoReturnable<Holder<Biome>> cir) {
+    private void cozyzones$guardSurfaceBiomes(int quartX,
+                                              int quartY,
+                                              int quartZ,
+                                              Climate.Sampler sampler,
+                                              CallbackInfoReturnable<Holder<Biome>> cir) {
         if (!WorldGeographyContext.prepared() || QuartPos.toBlock(quartY) < 48) return;
 
         Holder<Biome> returned = cir.getReturnValue();
         if (returned == null) return;
         ResourceLocation returnedId = returned.unwrapKey().map(key -> key.location()).orElse(null);
-        if (!COZYZONES$ASPEN.equals(returnedId)) return;
+        if (returnedId == null) return;
 
         int blockX = QuartPos.toBlock(quartX);
         int blockZ = QuartPos.toBlock(quartZ);
         RegionalCell cell = WorldGeographyContext.cellAt(blockX, blockZ);
+
+        ResourceLocation coreTarget = SharedCoreBiomePolicy.temper(
+                returnedId,
+                cell,
+                WorldGeographyContext.worldSeed(),
+                blockX,
+                blockZ
+        );
+        if (!coreTarget.equals(returnedId)) {
+            Holder<Biome> replacement = cozyzones$firstAvailable(
+                    coreTarget,
+                    id("minecraft:plains"),
+                    id("minecraft:forest"),
+                    id("minecraft:birch_forest"),
+                    id("minecraft:meadow")
+            );
+            if (replacement != null) {
+                cir.setReturnValue(replacement);
+                return;
+            }
+        }
+
+        if (!COZYZONES$ASPEN.equals(returnedId)) return;
 
         boolean legalHarvestwoodAspen = !WorldGeographyContext.provisionalAnchor()
                 && cell.radialZone() != Region.HEARTHLANDS
