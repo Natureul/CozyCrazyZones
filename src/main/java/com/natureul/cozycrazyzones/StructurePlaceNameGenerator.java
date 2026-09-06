@@ -3,7 +3,7 @@ package com.natureul.cozycrazyzones;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.ChunkPos;
 
-/** Deterministic regional naming language for non-village destinations. */
+/** Deterministic naming language for non-village destinations. */
 public final class StructurePlaceNameGenerator {
     private static final String[] NORTH_ROOTS = {
             "Pine", "Fir", "Frost", "Winter", "Snow", "Rime", "Silver", "White", "Cold", "Ice",
@@ -43,12 +43,20 @@ public final class StructurePlaceNameGenerator {
 
     public static String candidate(StructureDiscoveryProfile profile,
                                    MacroRegion region,
+                                   RegionalInfluenceBand influenceBand,
                                    long worldSeed,
                                    ResourceLocation structureId,
                                    ChunkPos start,
                                    int attempt) {
         long salt = 0x9E3779B97F4A7C15L * (profile.category().ordinal() + 1L);
         long mixed = mix64(worldSeed ^ start.toLong() ^ structureId.hashCode() ^ salt ^ (attempt * 0xD1B54A32D192ED03L));
+
+        // The whole 0-1200-ish core/transition band uses ordinary countryside names. Cardinal
+        // language begins at the same point the biome system says the regional ecology is actually
+        // established, so a tower beside the house cannot randomly become "Sunstone Spire".
+        if (influenceBand != RegionalInfluenceBand.ESTABLISHED) {
+            return NeutralHearthlandsNames.candidate(profile.category(), mixed, attempt);
+        }
 
         String[] roots = roots(region);
         String[] adjectives = adjectives(region);
@@ -104,8 +112,6 @@ public final class StructurePlaceNameGenerator {
 
     private static String merge(String root, String noun) {
         if (noun.contains(" ")) return root + " " + noun;
-        // A merged name reads nicely for compact fantasy-place nouns, but very long roots are
-        // clearer as two words (Jacaranda Crypt rather than JacarandaCrypt).
         return root.length() <= 7 ? root + noun.toLowerCase() : root + " " + noun;
     }
 
