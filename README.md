@@ -94,3 +94,5 @@ For v0.3.8, sample ~500, ~900, ~1,400, ~2,500, ~5,500, ~9,000, ~12,000 and ~15,5
 - North Dread still contains enough ocean inside the belt for Aquamirae to generate naturally.
 
 The registry dump is written to `logs/cozycrazyzones-registry-dump.txt`.
+
+Current CI verifies compilation and root-overlay packaging. Actual seed distribution still requires an in-game fresh-world pass before the 9k–15k final belt should be treated as permanently tuned.
