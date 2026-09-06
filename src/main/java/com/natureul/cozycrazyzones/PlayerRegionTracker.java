@@ -7,8 +7,6 @@ import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
 
 import java.util.HashMap;
@@ -121,13 +119,9 @@ public final class PlayerRegionTracker {
         }
         player.connection.send(new ClientboundSetSubtitleTextPacket(region.subtitleComponent()));
         player.connection.send(new ClientboundSetTitleTextPacket(region.titleComponent()));
-        float pitch = switch (region) {
-            case HEARTHLANDS -> 1.18F;
-            case FRONTIER -> 1.04F;
-            case WILDLANDS -> 0.90F;
-            case DREAD_REACHES -> 0.76F;
-        };
-        player.playNotifySound(SoundEvents.UI_TOAST_IN, SoundSource.MASTER, 0.42F, pitch);
+
+        // This is now an actual short motif rather than the old single 0.42-volume UI toast.
+        StingerService.queueZone(player, region);
         player.getPersistentData().putString(LAST_ANNOUNCED_KEY, region.id());
         state.lastAnnouncementTick = player.tickCount;
     }
