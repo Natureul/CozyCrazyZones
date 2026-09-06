@@ -64,6 +64,14 @@ public final class RegionalBiomePostProcessor {
             int blockZ = QuartPos.toBlock(quartZ);
             RegionalCell cell = WorldGeographyContext.cellAt(blockX, blockZ);
             ResourceLocation targetId = remap(originalId, cell, blockX, blockZ);
+            targetId = RegionalPaletteRefinement.refine(
+                    targetId,
+                    originalId,
+                    cell,
+                    WorldGeographyContext.worldSeed(),
+                    blockX,
+                    blockZ
+            );
             if (targetId.equals(originalId)) return original;
 
             Holder<Biome> replacement = lookup.get(targetId);
