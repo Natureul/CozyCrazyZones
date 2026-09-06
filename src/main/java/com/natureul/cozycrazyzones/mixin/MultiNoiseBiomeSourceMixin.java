@@ -23,6 +23,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -45,6 +46,8 @@ public abstract class MultiNoiseBiomeSourceMixin {
     private static final AtomicBoolean COZYZONES$FIRST_OCEAN_SUPPRESSION_LOGGED = new AtomicBoolean();
     @Unique
     private static final AtomicBoolean COZYZONES$MISSING_TARGET_LOGGED = new AtomicBoolean();
+    @Unique
+    private static final AtomicBoolean COZYZONES$FALLBACK_TARGET_LOGGED = new AtomicBoolean();
 
     @Unique
     private Map<ResourceLocation, Holder<Biome>> cozyzones$possibleBiomes;
@@ -103,10 +106,28 @@ public abstract class MultiNoiseBiomeSourceMixin {
         if (targetId.equals(originalId)) return;
 
         Holder<Biome> replacement = cozyzones$lookup(targetId);
+        if (replacement == null && !BiomeRegionality.isOcean(targetId) && !BiomeRegionality.isRiver(targetId)) {
+            ResourceLocation requested = targetId;
+            ResourceLocation fallbackId = cozyzones$firstAvailableRegionalFallback(cell);
+            if (fallbackId != null) {
+                Holder<Biome> fallback = cozyzones$lookup(fallbackId);
+                if (fallback != null) {
+                    targetId = fallbackId;
+                    replacement = fallback;
+                    if (COZYZONES$FALLBACK_TARGET_LOGGED.compareAndSet(false, true)) {
+                        CozyCrazyZones.LOGGER.warn(
+                                "Regional biome target {} was unavailable to the active MultiNoiseBiomeSource at {},{}; using regional fallback {} instead of leaking the original {}",
+                                requested, blockX, blockZ, fallbackId, originalId
+                        );
+                    }
+                }
+            }
+        }
+
         if (replacement == null) {
             if (COZYZONES$MISSING_TARGET_LOGGED.compareAndSet(false, true)) {
                 CozyCrazyZones.LOGGER.warn(
-                        "Regional biome remapper wanted {} -> {} at {},{} but the target is absent from this MultiNoiseBiomeSource possible-biome set",
+                        "Regional biome remapper wanted {} -> {} at {},{} but neither the target nor a safe regional fallback is available in this MultiNoiseBiomeSource possible-biome set",
                         originalId, targetId, blockX, blockZ
                 );
             }
@@ -156,6 +177,36 @@ public abstract class MultiNoiseBiomeSourceMixin {
             case WEST -> new ResourceLocation("biomesoplenty",
                     cell.radialZone().atLeast(Region.WILDLANDS) ? "redwood_forest" : "seasonal_forest");
         };
+    }
+
+    /**
+     * If a registered regional biome is not actually exposed by the active MultiNoiseBiomeSource,
+     * do not silently return all the way to the original generic Forest/Plains answer. These are
+     * deliberately conservative, known-good regional anchors; they are a last-resort compatibility
+     * path, not the normal palette.
+     */
+    @Unique
+    private ResourceLocation cozyzones$firstAvailableRegionalFallback(RegionalCell cell) {
+        boolean deep = cell.radialZone().atLeast(Region.WILDLANDS);
+        List<ResourceLocation> candidates = switch (cell.macroRegion()) {
+            case NORTH -> deep
+                    ? List.of(id("minecraft:snowy_taiga"), id("minecraft:snowy_plains"), id("minecraft:taiga"))
+                    : List.of(id("minecraft:taiga"), id("minecraft:snowy_taiga"), id("minecraft:meadow"));
+            case EAST -> deep
+                    ? List.of(id("minecraft:jungle"), id("minecraft:bamboo_jungle"), id("minecraft:sparse_jungle"), id("minecraft:mangrove_swamp"))
+                    : List.of(id("minecraft:sparse_jungle"), id("biomesoplenty:overgrown_greens"), id("minecraft:jungle"), id("minecraft:swamp"));
+            case SOUTH -> deep
+                    ? List.of(id("minecraft:desert"), id("minecraft:badlands"), id("minecraft:savanna"))
+                    : List.of(id("minecraft:savanna"), id("biomesoplenty:dryland"), id("minecraft:desert"));
+            case WEST -> deep
+                    ? List.of(id("biomesoplenty:old_growth_woodland"), id("biomesoplenty:redwood_forest"), id("minecraft:dark_forest"), id("minecraft:taiga"))
+                    : List.of(id("biomesoplenty:seasonal_forest"), id("biomesoplenty:maple_woods"), id("minecraft:dark_forest"), id("minecraft:taiga"));
+        };
+
+        for (ResourceLocation candidate : candidates) {
+            if (cozyzones$lookup(candidate) != null) return candidate;
+        }
+        return null;
     }
 
     /**
@@ -235,5 +286,10 @@ public abstract class MultiNoiseBiomeSourceMixin {
             }
         }
         return cozyzones$possibleBiomes.get(id);
+    }
+
+    @Unique
+    private static ResourceLocation id(String value) {
+        return new ResourceLocation(value);
     }
 }
