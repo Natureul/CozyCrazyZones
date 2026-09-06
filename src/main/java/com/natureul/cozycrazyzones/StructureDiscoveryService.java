@@ -86,7 +86,7 @@ public final class StructureDiscoveryService {
         String name = profile.category() == DiscoveryCategory.VILLAGE
                 ? VillageNameSavedData.get(level).getOrAssign(region, level.getSeed(), startChunk)
                 : StructureNameSavedData.get(level).getOrAssign(profile, cell, level.getSeed(), structureId, startChunk);
-        MapDecoration.Type icon = RegionalMapSymbolPolicy.iconFor(profile, region);
+        MapDecoration.Type icon = RegionalMapSymbolPolicy.iconFor(profile, cell);
 
         CompoundTag discovered = player.getPersistentData().getCompound(DISCOVERED_TAG);
         if (discovered.getBoolean(discoveryKey)) {
