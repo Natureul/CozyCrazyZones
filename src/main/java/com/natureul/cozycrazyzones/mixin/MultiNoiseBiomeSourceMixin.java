@@ -2,8 +2,10 @@ package com.natureul.cozycrazyzones.mixin;
 
 import com.natureul.cozycrazyzones.BiomeRegionality;
 import com.natureul.cozycrazyzones.CozyCrazyZones;
+import com.natureul.cozycrazyzones.FinalDestinationPolicy;
 import com.natureul.cozycrazyzones.MacroRegion;
 import com.natureul.cozycrazyzones.Region;
+import com.natureul.cozycrazyzones.RegionalBiomeStrictness;
 import com.natureul.cozycrazyzones.RegionalCell;
 import com.natureul.cozycrazyzones.RegionalInfluenceBand;
 import com.natureul.cozycrazyzones.RegionalNoise;
@@ -83,8 +85,21 @@ public abstract class MultiNoiseBiomeSourceMixin {
                         blockX,
                         blockZ
                 );
+
+        // The compatibility remapper above intentionally preserves COMMON biomes generously. This
+        // second pass tightens that residue so generic forest/plains become a core/border ingredient
+        // rather than dominating established Frostmarch/Greenveil/Sunscar/Harvestwood terrain.
+        targetId = RegionalBiomeStrictness.refine(
+                targetId,
+                originalId,
+                cell,
+                WorldGeographyContext.worldSeed(),
+                blockX,
+                blockZ
+        );
+
         targetId = cozyzones$softenHearthlandsOceanEdge(originalId, targetId, cell, blockX, blockZ);
-        targetId = cozyzones$reserveIceMazeForDread(originalId, targetId, cell);
+        targetId = cozyzones$reserveIceMazeForFinalBelt(originalId, targetId, cell);
         if (targetId.equals(originalId)) return;
 
         Holder<Biome> replacement = cozyzones$lookup(targetId);
@@ -128,7 +143,7 @@ public abstract class MultiNoiseBiomeSourceMixin {
      */
     @Unique
     private ResourceLocation cozyzones$remapMoor(RegionalCell cell) {
-        if (cell.influenceBand() == RegionalInfluenceBand.SHARED_CORE || cell.macroBoundaryStrength() < 0.42D) {
+        if (cell.influenceBand() == RegionalInfluenceBand.SHARED_CORE || cell.macroBoundaryStrength() < 0.30D) {
             return new ResourceLocation("minecraft", "meadow");
         }
 
@@ -180,25 +195,25 @@ public abstract class MultiNoiseBiomeSourceMixin {
     }
 
     /**
-     * In this exact pack Aquamirae marks only frozen_ocean and deep_frozen_ocean with its
-     * #aquamirae:ice_maze biome tag. Keeping Frostmarch merely cold until Dread Reaches therefore
-     * turns the Ice Maze/Cornelia destination into real outer-region geography rather than letting
-     * it consume the northern Wildlands coastline too early.
+     * Aquamirae's Ice Maze is biome/feature driven in this pack. Frozen-ocean answers are therefore
+     * treated as a final-destination resource: legal only in the finite northern Dread expedition
+     * belt. Before Dread, beyond the outer cap, or in another cardinal region, any frozen-ocean
+     * leakage is converted to a non-Maze regional ocean.
      */
     @Unique
-    private ResourceLocation cozyzones$reserveIceMazeForDread(ResourceLocation originalId,
-                                                               ResourceLocation targetId,
-                                                               RegionalCell cell) {
-        if (cell.macroRegion() != MacroRegion.NORTH || !BiomeRegionality.isOcean(originalId)) return targetId;
+    private ResourceLocation cozyzones$reserveIceMazeForFinalBelt(ResourceLocation originalId,
+                                                                   ResourceLocation targetId,
+                                                                   RegionalCell cell) {
+        if (!BiomeRegionality.isOcean(targetId)) return targetId;
 
-        boolean deep = originalId.getPath().startsWith("deep_");
-        if (cell.radialZone() == Region.DREAD_REACHES) {
+        boolean deep = targetId.getPath().startsWith("deep_") || originalId.getPath().startsWith("deep_");
+        if (FinalDestinationPolicy.iceMazeTerritory(cell)) {
             return new ResourceLocation("minecraft", deep ? "deep_frozen_ocean" : "frozen_ocean");
         }
 
-        String targetPath = targetId.getPath();
-        if ("frozen_ocean".equals(targetPath) || "deep_frozen_ocean".equals(targetPath)) {
-            return new ResourceLocation("minecraft", deep ? "deep_cold_ocean" : "cold_ocean");
+        if (FinalDestinationPolicy.isIceMazeOcean(targetId)
+                || FinalDestinationPolicy.isIceMazeOcean(originalId)) {
+            return FinalDestinationPolicy.nonMazeOcean(cell, deep);
         }
         return targetId;
     }
