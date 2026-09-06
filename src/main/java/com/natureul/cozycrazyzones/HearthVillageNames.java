@@ -4,6 +4,11 @@ import net.minecraft.world.level.ChunkPos;
 
 /** Regional village-name generator used by the persistent world name ledger. */
 public final class HearthVillageNames {
+    // The first eight entries in each pool are the v0.3.16 desk-map pool. nameFor deliberately
+    // continues to hash only across those eight so an existing world's four printed names do not
+    // change merely because v0.3.17 gained hundreds of collision alternatives.
+    private static final int LEGACY_POOL_SIZE = 8;
+
     private static final String[] FROSTMARCH = {
             "Pinewatch", "Firhaven", "Northmere", "Snowmelt", "Whitepine", "Coldwater", "Frostford", "Winterbrook",
             "Icemere", "Pinecross", "Snowberry", "Frosthollow", "Northwatch", "Firgrove", "Wintermere", "Coldharbor",
@@ -48,9 +53,12 @@ public final class HearthVillageNames {
 
     private HearthVillageNames() {}
 
-    /** Stable first-choice name; retained for callers that do not need collision probing. */
+    /** Stable v0.3.16-compatible first-choice name. */
     public static String nameFor(MacroRegion region, long worldSeed, ChunkPos target) {
-        return candidateFor(region, worldSeed, target, 0);
+        String[] pool = curated(region);
+        long regionSalt = 0x9E3779B97F4A7C15L * (region.ordinal() + 1L);
+        long mixed = mix64(worldSeed ^ target.toLong() ^ regionSalt);
+        return pool[Math.floorMod((int) mixed, LEGACY_POOL_SIZE)];
     }
 
     /**
@@ -58,6 +66,8 @@ public final class HearthVillageNames {
      * candidates until it finds one unused in the world, so names stay pleasant and truly unique.
      */
     public static String candidateFor(MacroRegion region, long worldSeed, ChunkPos target, int attempt) {
+        if (attempt <= 0) return nameFor(region, worldSeed, target);
+
         String[] curated = curated(region);
         long regionSalt = 0x9E3779B97F4A7C15L * (region.ordinal() + 1L);
         long base = mix64(worldSeed ^ target.toLong() ^ regionSalt);
