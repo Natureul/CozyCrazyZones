@@ -5,9 +5,10 @@ import net.minecraft.world.level.saveddata.maps.MapDecoration;
 /**
  * Visual grammar for Atlas discoveries.
  *
- * Shape communicates category when vanilla 1.20.1 provides a useful fixed icon. Banner-based
- * discoveries use a consistent geography palette: Inner Hearthlands white, Frostmarch light blue,
- * Greenveil green, Sunscar orange, Harvestwood brown.
+ * Geography color is the primary language for ordinary discoveries: Inner Hearthlands white,
+ * Frostmarch light blue, Greenveil green, Sunscar orange, Harvestwood brown. Truly distinctive
+ * vanilla destination icons are still used where they communicate more than a generic colored pin,
+ * while explicit boss sites remain red on purpose.
  */
 public final class RegionalMapSymbolPolicy {
     private RegionalMapSymbolPolicy() {}
@@ -18,12 +19,10 @@ public final class RegionalMapSymbolPolicy {
 
     public static MapDecoration.Type iconForCategory(DiscoveryCategory category, RegionalCell cell) {
         return switch (category) {
-            case DUNGEON -> MapDecoration.Type.RED_X;
-            case RUIN -> MapDecoration.Type.TARGET_X;
             case TEMPLE -> MapDecoration.Type.MONUMENT;
             case TOWER, FORTRESS -> MapDecoration.Type.MANSION;
             case BOSS -> MapDecoration.Type.BANNER_RED;
-            case VILLAGE, SHRINE, CAMP, MINE, SHIP, HOUSE, PORTAL, LANDMARK -> bannerFor(cell);
+            case VILLAGE, DUNGEON, SHRINE, RUIN, CAMP, MINE, SHIP, HOUSE, PORTAL, LANDMARK -> bannerFor(cell);
         };
     }
 
