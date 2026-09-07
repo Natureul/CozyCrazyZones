@@ -119,21 +119,29 @@ public final class CozyZonesApi {
                     && cell.radialZone().tier() <= Region.FRONTIER.tier();
         }
 
-        return ZoneRuleRegistry.structureRule(structureId)
-                .map(rule -> rule.allows(cell))
-                .orElse(true);
+        var explicitRule = ZoneRuleRegistry.structureRule(structureId);
+        if (explicitRule.isPresent()) return explicitRule.get().allows(cell);
+
+        // Unknown structure variants still get a conservative semantic firewall. This catches e.g.
+        // an acacia/savanna/desert structure selected from the native biome before the final visible
+        // Hearthlands palette becomes neutral Plains.
+        return RegionalStructureSemanticPolicy.allowsUnknown(structureId, cell);
     }
 
     public static boolean naturalEntityAllowed(ServerLevel level, ResourceLocation entityId, double x, double z) {
         if (ZoneRuleRegistry.naturalEntityNamespaceSuppressed(entityId)) return false;
+        RegionalCell cell = regionalCellAt(level, x, z);
+
+        // Geography owns strongly regional wildlife even when a mod injected it into an inherited
+        // biome tag before our visible biome remap. This is also evaluated for CHUNK_GENERATION in
+        // 0.3.26, which closes the starter-house elephant/gazelle leak.
+        if (!RegionalWildlifePolicy.allows(entityId, cell)) return false;
 
         // 0.3.24's compatibility table kept Carniflore at Wildlands+. The Danger Bible now defines
         // it as an uncommon Frontier territorial hazard that becomes more visible outward. Let the
-        // dedicated 0.3.25 resolver own that one migration instead of having the legacy minimum
-        // silently veto an otherwise-valid Frontier spawn.
+        // dedicated resolver own that migration instead of having the legacy minimum silently veto it.
         if (CARNIFLORE.equals(entityId)) return true;
 
-        RegionalCell cell = regionalCellAt(level, x, z);
         return ZoneRuleRegistry.naturalEntityRule(entityId)
                 .map(rule -> !rule.enabled() || rule.allows(cell))
                 .orElse(true);
