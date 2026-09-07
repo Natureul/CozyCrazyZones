@@ -37,13 +37,16 @@ public final class ZoneServerEvents {
 
     @SubscribeEvent
     public static void onFinalizeSpawn(MobSpawnEvent.FinalizeSpawn event) {
-        if (event.getSpawnType() != MobSpawnType.NATURAL) return;
+        MobSpawnType spawnType = event.getSpawnType();
+        if (spawnType != MobSpawnType.NATURAL && spawnType != MobSpawnType.CHUNK_GENERATION) return;
+
         ServerLevel level = event.getLevel().getLevel();
         ResourceLocation id = ForgeRegistries.ENTITY_TYPES.getKey(event.getEntity().getType());
         if (id == null) return;
 
-        // Namespace-wide suppressions are global. This is how unrelated Cataclysm natural mobs
-        // stay out of the Overworld, Nether and End without touching authored structure/summon spawns.
+        // Namespace-wide suppressions apply to both runtime natural spawns and passive wildlife
+        // populated while a chunk is first generated. Authored structure/spawner/event/summon paths
+        // use different MobSpawnTypes and deliberately bypass this ecology layer.
         if (ZoneRuleRegistry.naturalEntityNamespaceSuppressed(id)) {
             event.setSpawnCancelled(true);
             return;
@@ -51,11 +54,20 @@ public final class ZoneServerEvents {
 
         if (level.dimension() != Level.OVERWORLD) return;
 
-        // First honor the long-lived minimum-region compatibility rules, then apply the richer
-        // Danger Bible resolver. The latter owns exact regional/tier/time thinning and hard boss
-        // protection. Both are NATURAL-only, so authored raids, structures and summons bypass them.
-        if (!CozyZonesApi.naturalEntityAllowed(level, id, event.getX(), event.getZ())
-                || !DangerBibleSpawnPolicy.allowsNatural(level, id, event.getEntity(), event.getX(), event.getZ())) {
+        if (!CozyZonesApi.naturalEntityAllowed(level, id, event.getX(), event.getZ())) {
+            event.setSpawnCancelled(true);
+            return;
+        }
+
+        // A 0.3.26 injected selection has already been chosen from the regional/radial weighted
+        // ecology table. Do not roll the 0.3.25 thinning probability a second time. The static
+        // geography firewall above still applies, and NaturalSpawner still runs the entity's normal
+        // SpawnPlacements/light/collision rules before reaching this point.
+        boolean injected = spawnType == MobSpawnType.NATURAL
+                && RegionalSpawnInjector.matchesInjected(level, event.getEntity().getType(), event.getEntity().blockPosition());
+
+        if (!injected
+                && !DangerBibleSpawnPolicy.allowsNatural(level, id, event.getEntity(), event.getX(), event.getZ())) {
             event.setSpawnCancelled(true);
         }
     }
@@ -104,6 +116,7 @@ public final class ZoneServerEvents {
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
         DangerBibleSpawnPolicy.clearRuntimeState();
+        RegionalSpawnInjector.clearRuntimeState();
     }
 
     private static boolean namespaceLoaded(ResourceLocation id) {
