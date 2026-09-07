@@ -18,6 +18,7 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.MobSpawnEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.server.ServerStartedEvent;
+import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.loading.FMLPaths;
@@ -49,7 +50,14 @@ public final class ZoneServerEvents {
         }
 
         if (level.dimension() != Level.OVERWORLD) return;
-        if (!CozyZonesApi.naturalEntityAllowed(level, id, event.getX(), event.getZ())) event.setSpawnCancelled(true);
+
+        // First honor the long-lived minimum-region compatibility rules, then apply the richer
+        // Danger Bible resolver. The latter owns exact regional/tier/time thinning and hard boss
+        // protection. Both are NATURAL-only, so authored raids, structures and summons bypass them.
+        if (!CozyZonesApi.naturalEntityAllowed(level, id, event.getX(), event.getZ())
+                || !DangerBibleSpawnPolicy.allowsNatural(level, id, event.getEntity(), event.getX(), event.getZ())) {
+            event.setSpawnCancelled(true);
+        }
     }
 
     @SubscribeEvent
@@ -91,6 +99,11 @@ public final class ZoneServerEvents {
             if (!namespaceLoaded(id)) continue;
             if (!BuiltInRegistries.ENTITY_TYPE.containsKey(id)) CozyCrazyZones.LOGGER.warn("Configured entity ID is absent from this runtime: {}", id);
         }
+    }
+
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        DangerBibleSpawnPolicy.clearRuntimeState();
     }
 
     private static boolean namespaceLoaded(ResourceLocation id) {
