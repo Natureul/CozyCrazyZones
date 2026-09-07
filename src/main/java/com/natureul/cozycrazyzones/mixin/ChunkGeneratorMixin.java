@@ -4,7 +4,9 @@ import com.natureul.cozycrazyzones.CozyCrazyZones;
 import com.natureul.cozycrazyzones.CozyZonesApi;
 import com.natureul.cozycrazyzones.FinalDestinationPolicy;
 import com.natureul.cozycrazyzones.MacroRegion;
+import com.natureul.cozycrazyzones.Region;
 import com.natureul.cozycrazyzones.RegionalCell;
+import com.natureul.cozycrazyzones.RegionalInfluenceBand;
 import com.natureul.cozycrazyzones.StarterVillageIdentityService;
 import com.natureul.cozycrazyzones.VillageRingPlanner;
 import com.natureul.cozycrazyzones.WorldGeographyContext;
@@ -41,6 +43,7 @@ public abstract class ChunkGeneratorMixin {
     private static final ResourceLocation COZYZONES$VILLAGE_SNOWY = new ResourceLocation("minecraft", "village_snowy");
     private static final ResourceLocation COZYZONES$VILLAGE_TAIGA = new ResourceLocation("minecraft", "village_taiga");
     private static final ResourceLocation COZYZONES$VILLAGE_DESERT = new ResourceLocation("minecraft", "village_desert");
+    private static final ResourceLocation COZYZONES$JUNGLE_SANCTUARY_TEST = new ResourceLocation("cozycrazyzones", "jungle_abomination_sanctuary_test");
 
     @Inject(method = "tryGenerateStructure", at = @At("HEAD"), cancellable = true)
     private void cozyzones$gateStructure(StructureSet.StructureSelectionEntry entry,
@@ -94,6 +97,19 @@ public abstract class ChunkGeneratorMixin {
         if (FinalDestinationPolicy.isFinalStructure(id)) {
             RegionalCell cell = CozyZonesApi.regionalCellAt(level, x, z);
             if (!FinalDestinationPolicy.allowsStructure(id, cell)) {
+                cir.setReturnValue(false);
+                return;
+            }
+        }
+
+        // Temporary terrain-review copy: intentionally easy to locate, but still confined to the
+        // nearby established side of Greenveil rather than leaking into another cardinal ecology.
+        // Remove this structure/set after natural sanctuary terrain has been visually approved.
+        if (COZYZONES$JUNGLE_SANCTUARY_TEST.equals(id)) {
+            RegionalCell cell = CozyZonesApi.regionalCellAt(level, x, z);
+            if (cell.radialZone() != Region.HEARTHLANDS
+                    || cell.macroRegion() != MacroRegion.EAST
+                    || !cell.influenceBand().atLeast(RegionalInfluenceBand.CARDINAL_TRANSITION)) {
                 cir.setReturnValue(false);
                 return;
             }
