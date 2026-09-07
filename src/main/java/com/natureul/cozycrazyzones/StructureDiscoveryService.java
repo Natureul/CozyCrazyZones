@@ -62,6 +62,9 @@ public final class StructureDiscoveryService {
             // Tunnel Gore is an encounter hidden behind an unnaturally rich ore tunnel. Discovery names
             // what the player can observe, not the creature waiting at the far end.
             case "skarrier_mobs:tunnel_gore_lair_x" -> new StructureDiscoveryProfile(DiscoveryCategory.MINE, "Unusual Tunnels", MapDecoration.Type.BANNER_GRAY, false);
+            case "cozycrazyzones:jungle_abomination_sanctuary",
+                 "cozycrazyzones:jungle_abomination_sanctuary_test" ->
+                    new StructureDiscoveryProfile(DiscoveryCategory.BOSS, "Jungle Sanctuary", MapDecoration.Type.BANNER_RED, true);
             case "valhelsia_structures:deep_spawner_room" -> new StructureDiscoveryProfile(DiscoveryCategory.DUNGEON, "Deep Spawner Room", MapDecoration.Type.RED_X, true);
             case "valhelsia_structures:spawner_dungeon" -> new StructureDiscoveryProfile(DiscoveryCategory.DUNGEON, "Spawner Dungeon", MapDecoration.Type.RED_X, false);
             case "valhelsia_structures:spawner_room" -> new StructureDiscoveryProfile(DiscoveryCategory.DUNGEON, "Spawner Room", MapDecoration.Type.RED_X, false);
@@ -74,22 +77,34 @@ public final class StructureDiscoveryService {
                                  ResourceLocation structureId,
                                  StructureStart start,
                                  StructureDiscoveryProfile profile) {
-        ChunkPos startChunk = start.getChunkPos();
+        ChunkPos physicalStart = start.getChunkPos();
+        ChunkPos logicalStart = physicalStart;
+        MacroRegion canonicalVillageRegion = null;
+
+        if (profile.category() == DiscoveryCategory.VILLAGE) {
+            StarterVillageIdentityService.CanonicalVillage canonical =
+                    StarterVillageIdentityService.canonicalizePhysical(player, physicalStart);
+            logicalStart = canonical.start();
+            canonicalVillageRegion = canonical.region();
+        }
+
         String discoveryKey = profile.category() == DiscoveryCategory.VILLAGE
-                ? VillageNameSavedData.keyFor(startChunk)
-                : StructureNameSavedData.keyFor(structureId, startChunk);
+                ? VillageNameSavedData.get(level).canonicalKeyFor(logicalStart)
+                : StructureNameSavedData.keyFor(structureId, physicalStart);
 
         BoundingBox box = start.getBoundingBox();
         int x = (box.minX() + box.maxX()) / 2;
         int z = (box.minZ() + box.maxZ()) / 2;
         BlockPos marker = new BlockPos(x, player.blockPosition().getY(), z);
         RegionalCell cell = CozyZonesApi.regionalCellAt(level, x, z);
-        MacroRegion region = cell.macroRegion();
+        MacroRegion region = canonicalVillageRegion != null ? canonicalVillageRegion : cell.macroRegion();
 
         String name = profile.category() == DiscoveryCategory.VILLAGE
-                ? VillageNameSavedData.get(level).getOrAssign(region, level.getSeed(), startChunk)
-                : StructureNameSavedData.get(level).getOrAssign(profile, cell, level.getSeed(), structureId, startChunk);
-        MapDecoration.Type icon = RegionalMapSymbolPolicy.iconFor(profile, cell);
+                ? VillageNameSavedData.get(level).getOrAssign(region, level.getSeed(), logicalStart)
+                : StructureNameSavedData.get(level).getOrAssign(profile, cell, level.getSeed(), structureId, physicalStart);
+        MapDecoration.Type icon = profile.category() == DiscoveryCategory.VILLAGE && canonicalVillageRegion != null
+                ? RegionalMapSymbolPolicy.regionalBanner(canonicalVillageRegion)
+                : RegionalMapSymbolPolicy.iconFor(profile, cell);
 
         CompoundTag discovered = player.getPersistentData().getCompound(DISCOVERED_TAG);
         if (discovered.getBoolean(discoveryKey)) {
@@ -122,9 +137,10 @@ public final class StructureDiscoveryService {
         AtlasDiscoveryMarkerService.enqueue(player, discoveryKey, profile.category(), name, marker, icon);
 
         CozyCrazyZones.LOGGER.info(
-                "{} discovered {} '{}' [{}] at start chunk {},{} ({})",
+                "{} discovered {} '{}' [{}] at physical start chunk {},{}{} ({})",
                 player.getGameProfile().getName(), profile.kind(), name, structureId,
-                startChunk.x, startChunk.z,
+                physicalStart.x, physicalStart.z,
+                logicalStart.equals(physicalStart) ? "" : " -> starter " + logicalStart.x + "," + logicalStart.z,
                 HearthlandsNeutralNames.shouldUseNeutralName(cell) ? "Inner Hearthlands" : region.displayName()
         );
     }
