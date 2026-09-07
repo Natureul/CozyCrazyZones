@@ -15,14 +15,16 @@ import java.util.Optional;
  */
 public final class FinalDestinationPolicy {
     private static final ResourceLocation CURSED_PYRAMID = id("cataclysm:cursed_pyramid");
+    private static final ResourceLocation JUNGLE_ABOMINATION_SANCTUARY = id("cozycrazyzones:jungle_abomination_sanctuary");
 
-    private static final Map<ResourceLocation, MacroRegion> FINAL_STRUCTURES = Map.of(
-            CURSED_PYRAMID, MacroRegion.SOUTH,
-            id("aquamirae:outpost"), MacroRegion.NORTH,
-            id("aquamirae:shelter"), MacroRegion.NORTH,
-            id("aquamirae:ship"), MacroRegion.NORTH,
-            id("aquamirae:surface/arch"), MacroRegion.NORTH,
-            id("aquamirae:surface/spiral"), MacroRegion.NORTH
+    private static final Map<ResourceLocation, MacroRegion> FINAL_STRUCTURES = Map.ofEntries(
+            Map.entry(CURSED_PYRAMID, MacroRegion.SOUTH),
+            Map.entry(JUNGLE_ABOMINATION_SANCTUARY, MacroRegion.EAST),
+            Map.entry(id("aquamirae:outpost"), MacroRegion.NORTH),
+            Map.entry(id("aquamirae:shelter"), MacroRegion.NORTH),
+            Map.entry(id("aquamirae:ship"), MacroRegion.NORTH),
+            Map.entry(id("aquamirae:surface/arch"), MacroRegion.NORTH),
+            Map.entry(id("aquamirae:surface/spiral"), MacroRegion.NORTH)
     );
 
     private FinalDestinationPolicy() {}
