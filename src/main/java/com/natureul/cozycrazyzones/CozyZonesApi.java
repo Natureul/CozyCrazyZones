@@ -8,6 +8,7 @@ public final class CozyZonesApi {
     private static final double TWO_PI = Math.PI * 2.0D;
     private static final double QUARTER_PI = Math.PI / 4.0D;
     private static final double THREE_QUARTER_PI = Math.PI * 3.0D / 4.0D;
+    private static final ResourceLocation BORN_IN_CHAOS_FARM = new ResourceLocation("born_in_chaos_v1", "farm");
 
     private CozyZonesApi() {}
 
@@ -106,6 +107,17 @@ public final class CozyZonesApi {
     public static boolean structureAllowed(ServerLevel level, ResourceLocation structureId, double x, double z) {
         if (ZoneRuleRegistry.structureExplicitlySuppressed(structureId)) return false;
         RegionalCell cell = regionalCellAt(level, x, z);
+
+        // The audited Born in Chaos farm is a friendly farmer + Pumpkin Spirit homestead. Treat it
+        // as cultivated Harvestwood fringe rather than a generic structure: it may appear from the
+        // cardinal Hearthlands transition through Frontier, but not in the neutral home core or the
+        // increasingly wild/haunted outer tiers.
+        if (BORN_IN_CHAOS_FARM.equals(structureId)) {
+            return cell.macroRegion() == MacroRegion.WEST
+                    && cell.influenceBand().atLeast(RegionalInfluenceBand.CARDINAL_TRANSITION)
+                    && cell.radialZone().tier() <= Region.FRONTIER.tier();
+        }
+
         return ZoneRuleRegistry.structureRule(structureId)
                 .map(rule -> rule.allows(cell))
                 .orElse(true);
