@@ -9,6 +9,7 @@ public final class CozyZonesApi {
     private static final double QUARTER_PI = Math.PI / 4.0D;
     private static final double THREE_QUARTER_PI = Math.PI * 3.0D / 4.0D;
     private static final ResourceLocation BORN_IN_CHAOS_FARM = new ResourceLocation("born_in_chaos_v1", "farm");
+    private static final ResourceLocation CARNIFLORE = new ResourceLocation("skarrier_mobs", "carniflore");
 
     private CozyZonesApi() {}
 
@@ -125,6 +126,13 @@ public final class CozyZonesApi {
 
     public static boolean naturalEntityAllowed(ServerLevel level, ResourceLocation entityId, double x, double z) {
         if (ZoneRuleRegistry.naturalEntityNamespaceSuppressed(entityId)) return false;
+
+        // 0.3.24's compatibility table kept Carniflore at Wildlands+. The Danger Bible now defines
+        // it as an uncommon Frontier territorial hazard that becomes more visible outward. Let the
+        // dedicated 0.3.25 resolver own that one migration instead of having the legacy minimum
+        // silently veto an otherwise-valid Frontier spawn.
+        if (CARNIFLORE.equals(entityId)) return true;
+
         RegionalCell cell = regionalCellAt(level, x, z);
         return ZoneRuleRegistry.naturalEntityRule(entityId)
                 .map(rule -> !rule.enabled() || rule.allows(cell))
