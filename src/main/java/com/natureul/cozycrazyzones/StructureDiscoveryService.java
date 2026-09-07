@@ -62,9 +62,11 @@ public final class StructureDiscoveryService {
             // Tunnel Gore is an encounter hidden behind an unnaturally rich ore tunnel. Discovery names
             // what the player can observe, not the creature waiting at the far end.
             case "skarrier_mobs:tunnel_gore_lair_x" -> new StructureDiscoveryProfile(DiscoveryCategory.MINE, "Unusual Tunnels", MapDecoration.Type.BANNER_GRAY, false);
+            // The Greenveil final should reveal what is visible from outside, not announce the boss
+            // living below it. Proper-name generation will turn this into a regional temple/sanctum name.
             case "cozycrazyzones:jungle_abomination_sanctuary",
                  "cozycrazyzones:jungle_abomination_sanctuary_test" ->
-                    new StructureDiscoveryProfile(DiscoveryCategory.BOSS, "Jungle Sanctuary", MapDecoration.Type.BANNER_RED, true);
+                    new StructureDiscoveryProfile(DiscoveryCategory.TEMPLE, "Overgrown Sanctuary", MapDecoration.Type.BANNER_GREEN, true);
             case "valhelsia_structures:deep_spawner_room" -> new StructureDiscoveryProfile(DiscoveryCategory.DUNGEON, "Deep Spawner Room", MapDecoration.Type.RED_X, true);
             case "valhelsia_structures:spawner_dungeon" -> new StructureDiscoveryProfile(DiscoveryCategory.DUNGEON, "Spawner Dungeon", MapDecoration.Type.RED_X, false);
             case "valhelsia_structures:spawner_room" -> new StructureDiscoveryProfile(DiscoveryCategory.DUNGEON, "Spawner Room", MapDecoration.Type.RED_X, false);
