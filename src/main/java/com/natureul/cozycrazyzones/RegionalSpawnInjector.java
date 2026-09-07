@@ -12,37 +12,37 @@ import net.minecraft.world.level.biome.MobSpawnSettings;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 /**
  * Positive ecology layer for CozyCrazyCraft.
  *
- * Instead of periodically creating entities or inflating every biome's static spawn list, this layer
- * replaces a controlled fraction of vanilla's already-scheduled natural spawn selections. That keeps
- * vanilla mob caps and spawn cadence authoritative while allowing cardinal/radial geography to decide
- * what the attempted entity is. Vanilla still runs each chosen entity's SpawnPlacements, light,
- * collision and obstruction checks.
+ * We do not run a periodic entity spawner. A controlled share of vanilla's normal NATURAL spawn
+ * selections are replaced with a regional candidate, preserving vanilla mob caps and cadence. The
+ * selected entity must still pass its normal SpawnPlacements, light, collision and obstruction rules.
  */
 public final class RegionalSpawnInjector {
     private static final EnumMap<MacroRegion, List<Candidate>> CANDIDATES = new EnumMap<>(MacroRegion.class);
     private static final ThreadLocal<InjectionToken> ACTIVE_SELECTION = new ThreadLocal<>();
+    private static final Map<ResourceLocation, SpecialRule> SPECIALS = new HashMap<>();
+    private static final Map<SpecialKey, Long> LAST_SPECIAL = new HashMap<>();
     private static final int TOKEN_RADIUS = 48;
+    private static final int SPECIAL_CELL_SIZE = 512;
 
     static {
         for (MacroRegion region : MacroRegion.values()) CANDIDATES.put(region, new ArrayList<>());
 
-        // -----------------------------------------------------------------
-        // HARVESTWOOD — rural life first; folklore/pumpkin pressure outward.
-        // -----------------------------------------------------------------
+        // HARVESTWOOD: rural wildlife/friendly folklore first, corruption increasingly outward.
         west("alexsmobs:crow", Habitat.ANY_LAND, TimeRule.DAY, RegionalInfluenceBand.CARDINAL_TRANSITION, 24, 20, 12, 7, 1, 3);
         west("alexsmobs:raccoon", Habitat.ANY_LAND, TimeRule.ANY, RegionalInfluenceBand.CARDINAL_TRANSITION, 18, 18, 12, 7, 1, 2);
         west("alexsmobs:skunk", Habitat.WOODED, TimeRule.ANY, RegionalInfluenceBand.CARDINAL_TRANSITION, 7, 10, 9, 5, 1, 2);
         west("alexsmobs:bison", Habitat.OPEN, TimeRule.DAY, RegionalInfluenceBand.CARDINAL_TRANSITION, 10, 7, 3, 0, 2, 4);
         west("golemoverhaul:hay_golem", Habitat.CULTIVATED, TimeRule.DAY, RegionalInfluenceBand.CARDINAL_TRANSITION, 3, 5, 2, 1, 1, 1);
         west("born_in_chaos_v1:pumpkin_spirit", Habitat.CULTIVATED_OR_WOODED, TimeRule.ANY, RegionalInfluenceBand.CARDINAL_TRANSITION, 2, 4, 3, 2, 1, 1);
-
         west("born_in_chaos_v1:mr_pumpkin", Habitat.CULTIVATED_OR_WOODED, TimeRule.ANY, RegionalInfluenceBand.CARDINAL_TRANSITION, 2, 6, 5, 3, 1, 2);
         west("born_in_chaos_v1:pumpkin_dunce", Habitat.CULTIVATED_OR_WOODED, TimeRule.ANY, RegionalInfluenceBand.CARDINAL_TRANSITION, 2, 5, 4, 2, 1, 2);
         west("born_in_chaos_v1:restless_spirit", Habitat.ANY_LAND, TimeRule.NIGHT, RegionalInfluenceBand.CARDINAL_TRANSITION, 1, 4, 6, 5, 1, 2);
@@ -57,10 +57,12 @@ public final class RegionalSpawnInjector {
         west("born_in_chaos_v1:nightmare_stalker", Habitat.WOODED, TimeRule.NIGHT, RegionalInfluenceBand.ESTABLISHED, 0, 0, 1, 1, 1, 1);
         west("born_in_chaos_v1:dire_hound_leader", Habitat.WOODED, TimeRule.NIGHT, RegionalInfluenceBand.ESTABLISHED, 0, 0, 1, 1, 1, 1);
         west("born_in_chaos_v1:lifestealer", Habitat.WOODED, TimeRule.NIGHT, RegionalInfluenceBand.ESTABLISHED, 0, 0, 1, 1, 1, 1);
+        special("born_in_chaos_v1:pumpkin_bruiser", "harvestwood_apex", 6_000);
+        special("born_in_chaos_v1:nightmare_stalker", "harvestwood_apex", 12_000);
+        special("born_in_chaos_v1:dire_hound_leader", "harvestwood_apex", 8_000);
+        special("born_in_chaos_v1:lifestealer", "harvestwood_apex", 8_000);
 
-        // -----------------------------------------------------------------
-        // GREENVEIL — abundant fauna, then plants/predators, then sparse apex.
-        // -----------------------------------------------------------------
+        // GREENVEIL: visible fauna in Hearthlands, biological danger from Frontier outward.
         east("alexsmobs:toucan", Habitat.TROPICAL, TimeRule.DAY, RegionalInfluenceBand.ESTABLISHED, 18, 15, 9, 6, 1, 3);
         east("alexsmobs:capuchin_monkey", Habitat.TROPICAL, TimeRule.DAY, RegionalInfluenceBand.ESTABLISHED, 14, 14, 9, 6, 2, 4);
         east("alexsmobs:leafcutter_ant", Habitat.TROPICAL, TimeRule.DAY, RegionalInfluenceBand.ESTABLISHED, 13, 13, 10, 7, 2, 4);
@@ -70,7 +72,6 @@ public final class RegionalSpawnInjector {
         east("alexsmobs:crocodile", Habitat.WET_TROPICAL, TimeRule.ANY, RegionalInfluenceBand.ESTABLISHED, 0, 4, 6, 5, 1, 2);
         east("alexsmobs:anaconda", Habitat.WET_TROPICAL, TimeRule.ANY, RegionalInfluenceBand.ESTABLISHED, 0, 2, 4, 4, 1, 1);
         east("alexsmobs:tiger", Habitat.TROPICAL, TimeRule.ANY, RegionalInfluenceBand.ESTABLISHED, 0, 2, 3, 3, 1, 1);
-
         east("dungeonsmobs:jungle_zombie", Habitat.TROPICAL, TimeRule.NIGHT, RegionalInfluenceBand.ESTABLISHED, 4, 8, 10, 9, 1, 2);
         east("dungeonsmobs:mossy_skeleton", Habitat.TROPICAL, TimeRule.NIGHT, RegionalInfluenceBand.ESTABLISHED, 3, 7, 9, 8, 1, 2);
         east("skarrier_mobs:zombiflore", Habitat.TROPICAL, TimeRule.ANY, RegionalInfluenceBand.ESTABLISHED, 0, 10, 13, 11, 1, 2);
@@ -82,10 +83,11 @@ public final class RegionalSpawnInjector {
         east("dungeonsmobs:leapleaf", Habitat.TROPICAL, TimeRule.ANY, RegionalInfluenceBand.ESTABLISHED, 0, 0, 1, 1, 1, 1);
         east("born_in_chaos_v1:mother_spider", Habitat.TROPICAL, TimeRule.NIGHT, RegionalInfluenceBand.ESTABLISHED, 0, 0, 1, 1, 1, 1);
         east("skarrier_mobs:slither_matriarch", Habitat.WET_TROPICAL, TimeRule.ANY, RegionalInfluenceBand.ESTABLISHED, 0, 0, 1, 1, 1, 1);
+        special("dungeonsmobs:leapleaf", "greenveil_apex", 12_000);
+        special("born_in_chaos_v1:mother_spider", "greenveil_apex", 12_000);
+        special("skarrier_mobs:slither_matriarch", "greenveil_apex", 10_000);
 
-        // -----------------------------------------------------------------
-        // SUNSCAR — wildlife-rich but combat-sparse; open terrain/environment do work.
-        // -----------------------------------------------------------------
+        // SUNSCAR: abundant dry-country fauna, deliberately lower combat density.
         south("alexsmobs:gazelle", Habitat.DRY_OPEN, TimeRule.DAY, RegionalInfluenceBand.ESTABLISHED, 20, 17, 11, 8, 2, 4);
         south("alexsmobs:roadrunner", Habitat.DRY, TimeRule.DAY, RegionalInfluenceBand.ESTABLISHED, 14, 13, 9, 6, 1, 2);
         south("alexsmobs:jerboa", Habitat.DRY, TimeRule.ANY, RegionalInfluenceBand.ESTABLISHED, 13, 12, 8, 5, 1, 3);
@@ -102,10 +104,9 @@ public final class RegionalSpawnInjector {
         south("born_in_chaos_v1:spirit_guide", Habitat.DRY, TimeRule.ANY, RegionalInfluenceBand.ESTABLISHED, 0, 1, 2, 2, 1, 1);
         south("dungeonsmobs:geomancer", Habitat.DRY, TimeRule.ANY, RegionalInfluenceBand.ESTABLISHED, 0, 1, 2, 2, 1, 1);
         south("skarrier_mobs:trawler", Habitat.DRY, TimeRule.ANY, RegionalInfluenceBand.ESTABLISHED, 0, 0, 1, 1, 1, 1);
+        special("skarrier_mobs:trawler", "sunscar_elite", 12_000);
 
-        // -----------------------------------------------------------------
-        // FROSTMARCH — cold fauna + restrained specialists; no density compensation for weather.
-        // -----------------------------------------------------------------
+        // FROSTMARCH: cold fauna and specialists; weather/terrain remain part of the danger budget.
         north("alexsmobs:moose", Habitat.COLD_OR_WOODED, TimeRule.ANY, RegionalInfluenceBand.ESTABLISHED, 14, 13, 9, 5, 1, 3);
         north("alexsmobs:froststalker", Habitat.COLD, TimeRule.ANY, RegionalInfluenceBand.CARDINAL_TRANSITION, 4, 8, 10, 9, 1, 2);
         north("alexsmobs:snow_leopard", Habitat.COLD, TimeRule.ANY, RegionalInfluenceBand.ESTABLISHED, 0, 3, 4, 4, 1, 1);
@@ -119,10 +120,7 @@ public final class RegionalSpawnInjector {
 
     private RegionalSpawnInjector() {}
 
-    /**
-     * Called from NaturalSpawner#getRandomSpawnMobAt before vanilla chooses from the static biome list.
-     * Empty means "use vanilla's normal candidate" rather than "do not spawn".
-     */
+    /** Empty means "let vanilla choose normally", not "cancel spawning". */
     public static Optional<MobSpawnSettings.SpawnerData> tryInject(ServerLevel level,
                                                                    MobCategory category,
                                                                    RandomSource random,
@@ -133,16 +131,14 @@ public final class RegionalSpawnInjector {
 
         RegionalCell cell = CozyZonesApi.regionalCellAt(level, pos.getX() + 0.5D, pos.getZ() + 0.5D);
         if (cell.influenceBand() == RegionalInfluenceBand.SHARED_CORE) return Optional.empty();
-
-        // Do not spend creature replacement attempts deep underground. Monster geography can still
-        // color caves naturally; the friendly/wildlife layer is meant to read on the surface.
         if (category == MobCategory.CREATURE && pos.getY() < level.getSeaLevel() - 12) return Optional.empty();
 
         float opportunity = opportunityChance(cell, category);
         if (opportunity <= 0.0f || random.nextFloat() >= opportunity) return Optional.empty();
 
-        ResourceLocation biomeId = level.getBiome(pos).unwrapKey().map(key -> key.location()).orElse(null);
-        String biomePath = biomeId == null ? "" : biomeId.getPath().toLowerCase(Locale.ROOT);
+        String biomePath = level.getBiome(pos).unwrapKey()
+                .map(key -> key.location().getPath().toLowerCase(Locale.ROOT))
+                .orElse("");
         boolean day = level.isDay();
 
         List<ResolvedCandidate> eligible = new ArrayList<>();
@@ -150,14 +146,13 @@ public final class RegionalSpawnInjector {
         for (Candidate candidate : CANDIDATES.get(cell.macroRegion())) {
             int weight = candidate.weight(cell.radialZone());
             if (weight <= 0) continue;
-            if (!candidate.minimumInfluence().allows(cell.influenceBand())) continue;
+            if (!cell.influenceBand().atLeast(candidate.minimumInfluence())) continue;
             if (!candidate.timeRule().allows(day)) continue;
             if (!candidate.habitat().matches(biomePath)) continue;
 
             EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.getOptional(candidate.id()).orElse(null);
             if (type == null || type.getCategory() != category || !type.canSummon()) continue;
             if (!CozyZonesApi.naturalEntityAllowed(level, candidate.id(), pos.getX(), pos.getZ())) continue;
-            if (!DangerBibleSpawnPolicy.permitsInjectedSelection(level, candidate.id(), pos.getX(), pos.getZ())) continue;
 
             eligible.add(new ResolvedCandidate(candidate, type, weight));
             totalWeight += weight;
@@ -174,6 +169,8 @@ public final class RegionalSpawnInjector {
             }
         }
 
+        if (!claimSpecialIfNeeded(level, selected.definition().id(), pos)) return Optional.empty();
+
         Candidate definition = selected.definition();
         MobSpawnSettings.SpawnerData data = new MobSpawnSettings.SpawnerData(
                 selected.type(), 1, definition.minCount(), definition.maxCount()
@@ -182,9 +179,6 @@ public final class RegionalSpawnInjector {
         return Optional.of(data);
     }
 
-    /** Vanilla validates that a selected SpawnerData is literally present in the static biome list.
-     * Our dynamically selected entries are intentionally not, so the NaturalSpawner mixin bypasses
-     * only that membership check for the active selection. All subsequent spawn checks still run. */
     public static boolean matchesInjected(ServerLevel level, EntityType<?> type, BlockPos pos) {
         InjectionToken token = ACTIVE_SELECTION.get();
         if (token == null || token.level() != level || token.type() != type || token.gameTime() != level.getGameTime()) return false;
@@ -193,8 +187,22 @@ public final class RegionalSpawnInjector {
                 && Math.abs(pos.getZ() - token.origin().getZ()) <= TOKEN_RADIUS;
     }
 
-    public static void clearThreadSelection() {
+    public static synchronized void clearRuntimeState() {
+        LAST_SPECIAL.clear();
         ACTIVE_SELECTION.remove();
+    }
+
+    private static synchronized boolean claimSpecialIfNeeded(ServerLevel level, ResourceLocation id, BlockPos pos) {
+        SpecialRule rule = SPECIALS.get(id);
+        if (rule == null) return true;
+        int cellX = Math.floorDiv(pos.getX(), SPECIAL_CELL_SIZE);
+        int cellZ = Math.floorDiv(pos.getZ(), SPECIAL_CELL_SIZE);
+        SpecialKey key = new SpecialKey(level.getSeed(), rule.group(), cellX, cellZ);
+        long now = level.getGameTime();
+        Long previous = LAST_SPECIAL.get(key);
+        if (previous != null && now >= previous && now - previous < rule.cooldownTicks()) return false;
+        LAST_SPECIAL.put(key, now);
+        return true;
     }
 
     private static float opportunityChance(RegionalCell cell, MobCategory category) {
@@ -213,61 +221,33 @@ public final class RegionalSpawnInjector {
             };
             default -> 0.0f;
         };
-
-        // Organic macro borders should blend rather than instantly replacing one themed population
-        // with another. Regional strength also eases the authored tables into the 700-1200 transition.
         double strength = Math.max(0.20D, cell.regionalStrength());
         double border = 0.45D + 0.55D * cell.macroBoundaryStrength();
         return (float) Math.min(0.45D, base * strength * border);
     }
 
     private static void west(String id, Habitat habitat, TimeRule time, RegionalInfluenceBand influence,
-                             int h, int f, int w, int d, int min, int max) {
-        add(MacroRegion.WEST, id, habitat, time, influence, h, f, w, d, min, max);
-    }
-
+                             int h, int f, int w, int d, int min, int max) { add(MacroRegion.WEST, id, habitat, time, influence, h, f, w, d, min, max); }
     private static void east(String id, Habitat habitat, TimeRule time, RegionalInfluenceBand influence,
-                             int h, int f, int w, int d, int min, int max) {
-        add(MacroRegion.EAST, id, habitat, time, influence, h, f, w, d, min, max);
-    }
-
+                             int h, int f, int w, int d, int min, int max) { add(MacroRegion.EAST, id, habitat, time, influence, h, f, w, d, min, max); }
     private static void south(String id, Habitat habitat, TimeRule time, RegionalInfluenceBand influence,
-                              int h, int f, int w, int d, int min, int max) {
-        add(MacroRegion.SOUTH, id, habitat, time, influence, h, f, w, d, min, max);
-    }
-
+                              int h, int f, int w, int d, int min, int max) { add(MacroRegion.SOUTH, id, habitat, time, influence, h, f, w, d, min, max); }
     private static void north(String id, Habitat habitat, TimeRule time, RegionalInfluenceBand influence,
-                              int h, int f, int w, int d, int min, int max) {
-        add(MacroRegion.NORTH, id, habitat, time, influence, h, f, w, d, min, max);
+                              int h, int f, int w, int d, int min, int max) { add(MacroRegion.NORTH, id, habitat, time, influence, h, f, w, d, min, max); }
+
+    private static void add(MacroRegion region, String id, Habitat habitat, TimeRule time,
+                            RegionalInfluenceBand influence, int h, int f, int w, int d, int min, int max) {
+        CANDIDATES.get(region).add(new Candidate(new ResourceLocation(id), habitat, time, influence, h, f, w, d, min, max));
     }
 
-    private static void add(MacroRegion region,
-                            String id,
-                            Habitat habitat,
-                            TimeRule time,
-                            RegionalInfluenceBand influence,
-                            int hearthlands,
-                            int frontier,
-                            int wildlands,
-                            int dread,
-                            int minCount,
-                            int maxCount) {
-        CANDIDATES.get(region).add(new Candidate(
-                new ResourceLocation(id), habitat, time, influence,
-                hearthlands, frontier, wildlands, dread, minCount, maxCount
-        ));
+    private static void special(String id, String group, int cooldownTicks) {
+        SPECIALS.put(new ResourceLocation(id), new SpecialRule(group, cooldownTicks));
     }
 
-    private record Candidate(ResourceLocation id,
-                             Habitat habitat,
-                             TimeRule timeRule,
+    private record Candidate(ResourceLocation id, Habitat habitat, TimeRule timeRule,
                              RegionalInfluenceBand minimumInfluence,
-                             int hearthlandsWeight,
-                             int frontierWeight,
-                             int wildlandsWeight,
-                             int dreadWeight,
-                             int minCount,
-                             int maxCount) {
+                             int hearthlandsWeight, int frontierWeight, int wildlandsWeight, int dreadWeight,
+                             int minCount, int maxCount) {
         int weight(Region region) {
             return switch (region) {
                 case HEARTHLANDS -> hearthlandsWeight;
@@ -280,29 +260,17 @@ public final class RegionalSpawnInjector {
 
     private record ResolvedCandidate(Candidate definition, EntityType<?> type, int weight) {}
     private record InjectionToken(ServerLevel level, EntityType<?> type, long gameTime, BlockPos origin) {}
+    private record SpecialRule(String group, int cooldownTicks) {}
+    private record SpecialKey(long worldSeed, String group, int cellX, int cellZ) {}
 
     private enum TimeRule {
-        ANY,
-        DAY,
-        NIGHT;
-
-        boolean allows(boolean day) {
-            return this == ANY || (this == DAY && day) || (this == NIGHT && !day);
-        }
+        ANY, DAY, NIGHT;
+        boolean allows(boolean day) { return this == ANY || (this == DAY && day) || (this == NIGHT && !day); }
     }
 
     private enum Habitat {
-        ANY_LAND,
-        OPEN,
-        WOODED,
-        CULTIVATED,
-        CULTIVATED_OR_WOODED,
-        TROPICAL,
-        WET_TROPICAL,
-        DRY,
-        DRY_OPEN,
-        COLD,
-        COLD_OR_WOODED;
+        ANY_LAND, OPEN, WOODED, CULTIVATED, CULTIVATED_OR_WOODED,
+        TROPICAL, WET_TROPICAL, DRY, DRY_OPEN, COLD, COLD_OR_WOODED;
 
         boolean matches(String biome) {
             boolean open = containsAny(biome, "plains", "meadow", "field", "grassland", "pasture", "prairie", "shrub", "scrub", "steppe");
@@ -312,7 +280,6 @@ public final class RegionalSpawnInjector {
             boolean wet = containsAny(biome, "river", "swamp", "marsh", "mangrove", "bayou", "wetland");
             boolean dry = containsAny(biome, "desert", "savanna", "badlands", "mesa", "scrub", "dune", "dry", "steppe");
             boolean cold = containsAny(biome, "snow", "frozen", "ice", "taiga", "conifer", "alpine", "grove");
-
             return switch (this) {
                 case ANY_LAND -> true;
                 case OPEN -> open;
