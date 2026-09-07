@@ -11,7 +11,8 @@
     "NoiseBasedChunkGeneratorMixin",
     "MinecraftServerMixin",
     "AspenBiomeGuardMixin",
-    "ServerLevelStructureLocatorMixin"
+    "ServerLevelStructureLocatorMixin",
+    "NaturalSpawnerMixin"
   ],
   "injectors": {
     "defaultRequire": 1
