@@ -29,8 +29,12 @@ import java.util.Set;
  * assign two different names to what looks like one continuous village on the Atlas.
  */
 public final class StarterVillageIdentityService {
-    /** Reserved starter settlements own the surrounding half-kilometre village cluster. */
-    public static final int STARTER_SETTLEMENT_RADIUS = 512;
+    /**
+     * A second start this close belongs to the same visible starter settlement. 192 blocks is wide
+     * enough for jigsaw village spillover/forced-anchor mismatch without swallowing a genuinely
+     * separate vanilla village several hundred blocks down the road.
+     */
+    public static final int STARTER_SETTLEMENT_RADIUS = 192;
 
     private static final ResourceLocation ATLAS_ID = new ResourceLocation("map_atlases", "atlas");
     private static final String KNOWN_TAG = "cozycrazyzones:known_atlas_markers";
@@ -99,7 +103,7 @@ public final class StarterVillageIdentityService {
                 : new CanonicalVillage(best, bestRegion, true);
     }
 
-    /** True when a non-reserved vanilla village candidate would crowd a starter settlement. */
+    /** True when a non-reserved vanilla village candidate would visibly crowd a starter settlement. */
     public static boolean crowdsReservedStarter(ServerLevel level, ChunkPos candidate) {
         Map<MacroRegion, ChunkPos> targets = targets(level);
         if (targets.isEmpty()) return false;
@@ -131,6 +135,14 @@ public final class StarterVillageIdentityService {
         repairPersistentAliases(player);
         player.getPersistentData().putInt(REPAIR_VERSION_TAG, REPAIR_VERSION);
         cleanupRetiredDecorations(player);
+    }
+
+    /** Preserve one-time repair/cleanup state across the Forge player clone used by death/respawn. */
+    public static void copyPersistentState(ServerPlayer original, ServerPlayer replacement) {
+        int version = original.getPersistentData().getInt(REPAIR_VERSION_TAG);
+        if (version > 0) replacement.getPersistentData().putInt(REPAIR_VERSION_TAG, version);
+        CompoundTag retired = original.getPersistentData().getCompound(RETIRED_TAG);
+        if (!retired.isEmpty()) replacement.getPersistentData().put(RETIRED_TAG, retired.copy());
     }
 
     private static void repairPersistentAliases(ServerPlayer player) {
