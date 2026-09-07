@@ -102,8 +102,12 @@ public final class VillageNameSavedData extends SavedData {
         String aliasKey = keyFor(aliasStart);
         String canonicalKey = resolveKey(keyFor(canonicalStart));
         if (aliasKey.equals(canonicalKey)) return;
+
+        String retiredName = names.remove(aliasKey);
+        if (retiredName != null && !names.containsValue(retiredName)) used.remove(retiredName);
+
         String previous = aliases.put(aliasKey, canonicalKey);
-        if (!canonicalKey.equals(previous)) setDirty();
+        if (!canonicalKey.equals(previous) || retiredName != null) setDirty();
     }
 
     public String canonicalKeyFor(ChunkPos villageStart) {
