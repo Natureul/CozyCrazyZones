@@ -5,6 +5,7 @@ import com.natureul.cozycrazyzones.CozyZonesApi;
 import com.natureul.cozycrazyzones.FinalDestinationPolicy;
 import com.natureul.cozycrazyzones.MacroRegion;
 import com.natureul.cozycrazyzones.RegionalCell;
+import com.natureul.cozycrazyzones.StarterVillageIdentityService;
 import com.natureul.cozycrazyzones.VillageRingPlanner;
 import com.natureul.cozycrazyzones.WorldGeographyContext;
 import com.natureul.cozycrazyzones.ZoneRuleRegistry;
@@ -71,10 +72,17 @@ public abstract class ChunkGeneratorMixin {
 
         // The starter house is settlement zero. During vanilla's provisional spawn search there is
         // no authoritative center yet, so suppress village starts entirely. Once spawn is committed,
-        // no vanilla village start may begin inside the 1000-block sanctuary.
+        // no vanilla village start may begin inside the 1000-block sanctuary. The half-kilometre
+        // reservation around each authored starter village also prevents a second lattice village
+        // from growing into the same settlement and receiving a second name.
         if (cozyzones$isVanillaVillage(id)) {
             if (WorldGeographyContext.provisionalAnchor()
                     || CozyZonesApi.distanceFromSpawn(level, x, z) < VillageRingPlanner.MIN_VILLAGE_START_DISTANCE) {
+                cir.setReturnValue(false);
+                return;
+            }
+            if (WorldGeographyContext.prepared()
+                    && StarterVillageIdentityService.crowdsReservedStarter(level, chunkPos)) {
                 cir.setReturnValue(false);
                 return;
             }
@@ -82,7 +90,7 @@ public abstract class ChunkGeneratorMixin {
 
         // Regional finals require both halves of the geography contract: the correct cardinal Dread
         // region AND a finite outer expedition limit. This prevents the first valid Cursed Pyramid
-        // or Aquamirae structure from drifting to 20k-30k+ blocks simply because Dread is unbounded.
+        // or other final destination from drifting to 20k-30k+ blocks simply because Dread is unbounded.
         if (FinalDestinationPolicy.isFinalStructure(id)) {
             RegionalCell cell = CozyZonesApi.regionalCellAt(level, x, z);
             if (!FinalDestinationPolicy.allowsStructure(id, cell)) {
