@@ -58,6 +58,12 @@ public final class StarterSurveyService {
         PENDING.clear();
     }
 
+    /** Preserve the survey migration version across Forge's player clone on death/respawn. */
+    public static void copyPersistentState(ServerPlayer original, ServerPlayer replacement) {
+        int version = original.getPersistentData().getInt(SURVEY_VERSION_TAG);
+        if (version > 0) replacement.getPersistentData().putInt(SURVEY_VERSION_TAG, version);
+    }
+
     private static boolean tryInstall(ServerPlayer player) {
         ServerLevel level = player.serverLevel();
         Map<MacroRegion, ChunkPos> targets = VillageRingPlanner.targetsFor(
@@ -109,13 +115,10 @@ public final class StarterSurveyService {
                             .append(Component.literal(" + four nearby settlements are marked in your Atlas")),
                     true
             );
+            CozyCrazyZones.LOGGER.info("Prepared starter Atlas survey: home '{}' plus four Hearthlands settlements", homeName);
+        } else {
+            CozyCrazyZones.LOGGER.info("Upgraded starter Atlas survey to canonical settlement identities");
         }
-        CozyCrazyZones.LOGGER.info(
-                previousVersion >= 2
-                        ? "Upgraded starter Atlas survey to canonical settlement identities"
-                        : "Prepared starter Atlas survey: home '{}' plus four Hearthlands settlements",
-                previousVersion >= 2 ? new Object[]{} : new Object[]{homeName}
-        );
         return true;
     }
 }
