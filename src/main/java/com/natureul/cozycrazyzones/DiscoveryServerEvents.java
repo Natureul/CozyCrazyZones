@@ -45,6 +45,8 @@ public final class DiscoveryServerEvents {
         if (event.getOriginal() instanceof ServerPlayer original && event.getEntity() instanceof ServerPlayer replacement) {
             StructureDiscoveryService.copyPersistentState(original, replacement);
             AtlasDiscoveryMarkerService.copyPersistentState(original, replacement);
+            StarterVillageIdentityService.copyPersistentState(original, replacement);
+            StarterSurveyService.copyPersistentState(original, replacement);
         }
     }
 
