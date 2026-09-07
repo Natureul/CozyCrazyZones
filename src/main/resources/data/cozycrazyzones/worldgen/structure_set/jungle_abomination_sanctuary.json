@@ -1,0 +1,14 @@
+{
+  "structures": [
+    {
+      "structure": "cozycrazyzones:jungle_abomination_sanctuary",
+      "weight": 1
+    }
+  ],
+  "placement": {
+    "type": "minecraft:random_spread",
+    "salt": 1793845521,
+    "spacing": 160,
+    "separation": 80
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "cozycrazyzones:jungle_abomination_sanctuary/start",
+  "fallback": "minecraft:empty",
+  "elements": [
+    {
+      "weight": 1,
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "cozy_jungle_abomination:jungle_abomination_sanctuary",
+        "processors": "minecraft:empty",
+        "projection": "rigid"
+      }
+    }
+  ]
+}

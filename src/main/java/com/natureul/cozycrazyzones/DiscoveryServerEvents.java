@@ -23,8 +23,10 @@ public final class DiscoveryServerEvents {
         StingerService.tick(player);
 
         // Loaded-position structure membership and Atlas marker work are sampled once per second.
-        // Neither performs a radius locate nor generates remote chunks.
+        // Neither performs a radius locate nor generates remote chunks. StarterVillageIdentityService
+        // is a one-time migration plus deferred cleanup and becomes effectively free after repair.
         if (player.tickCount % 20 == 0) {
+            StarterVillageIdentityService.tick(player);
             StructureDiscoveryService.tick(player);
             AtlasDiscoveryMarkerService.tick(player);
         }
@@ -43,6 +45,8 @@ public final class DiscoveryServerEvents {
         if (event.getOriginal() instanceof ServerPlayer original && event.getEntity() instanceof ServerPlayer replacement) {
             StructureDiscoveryService.copyPersistentState(original, replacement);
             AtlasDiscoveryMarkerService.copyPersistentState(original, replacement);
+            StarterVillageIdentityService.copyPersistentState(original, replacement);
+            StarterSurveyService.copyPersistentState(original, replacement);
         }
     }
 
